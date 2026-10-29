@@ -36,6 +36,7 @@ import {
   SECTION_LABELS,
   SECTION_PACE_SECONDS,
   SECTIONS,
+  type Annotation,
   type AttemptNavItem,
   type AttemptQuestion,
   type AttemptSummary,
@@ -52,14 +53,14 @@ import {
   TEST_UPLOAD_SOURCE,
   uploadAccessKey,
 } from "@satsharks/types";
-import type { BankDrillInput, CreateAttemptInput, CreateFullTestInput, CreateMockInput, RetryDrillInput, SaveAnswerInput } from "@satsharks/validation";
+import type { BankDrillInput, CreateAttemptInput, CreateFullTestInput, CreateMockInput, RetryDrillInput, SaveAnnotationsInput, SaveAnswerInput } from "@satsharks/validation";
 import mongoose from "mongoose";
 import { AppError } from "../utils/app-error";
 import { gradeAnswer } from "../utils/grading";
 import { drillSize, paidOnly, requireContent, requireFeature, type UserAccess } from "./access.service";
 import { activityService } from "./activity.service";
 import { historyService } from "./history.service";
-import { orderModule, pickModule, requiredForHard, type Candidate } from "./mock-assembly";
+import { orderModule, pickModule, pickPatternModule, requiredForHard, type Candidate } from "./mock-assembly";
 import { sectionScore, totalScore } from "./scoring";
 import { settingsService } from "./settings.service";
 import { testUploadService } from "./test-upload.service";
@@ -235,6 +236,7 @@ function toQuestionView(question: QuestionDoc, item: Item, position: number, rev
     result: reveal
       ? { correct: item.correct, correctAnswer: question.correctAnswer ?? null, explanation: question.explanation ?? null }
       : null,
+    annotations: (item.annotations ?? []).map(({ id, target, start, end, color, underline, note }) => ({ id, target, start, end, color, underline, note })),
   };
 }
 
@@ -318,23 +320,124 @@ async function finalize(attempt: AttemptDoc): Promise<AttemptDoc> {
   return updated ?? (await AttemptModel.findById(attempt._id).lean<AttemptDoc>())!;
 }
 
-// The questions a mock draws from: published, in the section, from the chosen exams (or all).
-async function mockPool(section: Section, paperIds: mongoose.Types.ObjectId[]): Promise<Candidate[]> {
+// When the student was last given each question of a section (any drill, mock or full test,
+// deleted ones too), by fingerprint: a question reused under another id counts as given.
+async function seenByKey(userId: string, section: Section): Promise<Map<string, number>> {
+  // Aggregation pipelines are not passed through the query sanitizer; values are an ObjectId and
+  // fixed strings.
+  const rows = await AttemptModel.aggregate<{ _id: mongoose.Types.ObjectId; at: Date; key: string | null }>([
+    { $match: { userId: new mongoose.Types.ObjectId(userId), section } },
+    { $project: { createdAt: 1, "items.questionId": 1 } },
+    { $unwind: "$items" },
+    { $group: { _id: "$items.questionId", at: { $max: "$createdAt" } } },
+    { $lookup: { from: "questions", localField: "_id", foreignField: "_id", as: "question", pipeline: [{ $project: { contentKey: 1 } }] } },
+    { $project: { at: 1, key: { $ifNull: [{ $first: "$question.contentKey" }, null] } } },
+  ]);
+  const seen = new Map<string, number>();
+  for (const row of rows) {
+    const key = row.key ?? String(row._id);
+    seen.set(key, Math.max(seen.get(key) ?? 0, row.at.getTime()));
+  }
+  return seen;
+}
+
+type PoolRow = {
+  _id: mongoose.Types.ObjectId;
+  contentKey: string | null;
+  skill: string | null;
+  topic: string | null;
+  difficulty: Candidate["difficulty"];
+  questionType: Candidate["questionType"];
+  quantitative: boolean;
+};
+
+// The questions a mock draws from: published, in the section, from the chosen exams (or all),
+// each with when this student last saw it.
+async function mockPool(userId: string, section: Section, paperIds: mongoose.Types.ObjectId[], fallback = false): Promise<Candidate[]> {
   // Aggregation pipelines are not passed through the query sanitizer; values here are ObjectIds
   // from validated input and fixed strings.
   const match: Record<string, unknown> = { status: "published", section, tags: { $ne: FULL_TEST_QUESTION_TAG } };
   if (paperIds.length > 0) match.paperId = { $in: paperIds };
-  const rows = await QuestionModel.aggregate<{ _id: mongoose.Types.ObjectId; skill: string | null; topic: string | null; difficulty: Candidate["difficulty"] }>([
-    { $match: match },
-    { $project: { _id: 1, skill: 1, topic: 1, difficulty: 1 } },
+  const [rows, seen] = await Promise.all([
+    QuestionModel.aggregate<PoolRow>([
+      { $match: match },
+      {
+        $project: {
+          _id: 1,
+          contentKey: 1,
+          skill: 1,
+          topic: 1,
+          difficulty: 1,
+          questionType: 1,
+          // A Command of Evidence question on a table or graph (the quantitative kind).
+          quantitative: {
+            $or: [
+              { $ne: [{ $ifNull: ["$viz", null] }, null] },
+              { $gt: [{ $size: { $ifNull: ["$assets", []] } }, 0] },
+              { $regexMatch: { input: "$prompt", regex: "\\b(graph|table|chart|data)\\b", options: "i" } },
+            ],
+          },
+        },
+      },
+    ]),
+    seenByKey(userId, section),
   ]);
-  return rows.map((row) => ({ id: String(row._id), skill: row.skill, topic: row.topic, difficulty: row.difficulty }));
+  return rows.map((row) => {
+    const key = row.contentKey ?? String(row._id);
+    return {
+      id: String(row._id),
+      key,
+      skill: row.skill,
+      topic: row.topic,
+      difficulty: row.difficulty,
+      questionType: row.questionType,
+      quantitative: row.quantitative,
+      seenAt: seen.get(key) ?? null,
+      fallback,
+    };
+  });
+}
+
+// One module drawn from the pool: the official pattern unless an admin turned it off.
+function drawModule(pool: Candidate[], section: Section, module: MockModule, usedKeys: ReadonlySet<string>, officialPattern: boolean): mongoose.Types.ObjectId[] {
+  const picked = officialPattern
+    ? pickPatternModule(pool, section, module, usedKeys)
+    : orderModule(pickModule(pool, MOCK_FORMAT[section].questionsPerModule, module, usedKeys), section);
+  return picked.map((candidate) => new mongoose.Types.ObjectId(candidate.id));
+}
+
+// A drill's questions: never given to this student first (random), then the ones given longest
+// ago, one per fingerprint.
+async function freshFirst(userId: string, section: Section, match: Record<string, unknown>, size: number): Promise<mongoose.Types.ObjectId[]> {
+  const [rows, seen] = await Promise.all([
+    QuestionModel.aggregate<{ _id: mongoose.Types.ObjectId; contentKey: string | null }>([{ $match: match }, { $project: { _id: 1, contentKey: 1 } }]),
+    seenByKey(userId, section),
+  ]);
+  // A random one of each fingerprint, then a random order within "never given".
+  const byKey = new Map<string, { id: mongoose.Types.ObjectId; tie: number }>();
+  for (const row of rows) {
+    const key = row.contentKey ?? String(row._id);
+    const tie = Math.random();
+    if ((byKey.get(key)?.tie ?? -1) < tie) byKey.set(key, { id: row._id, tie });
+  }
+  const order = [...byKey.entries()].map(([key, { id, tie }]) => ({ id, seenAt: seen.get(key) ?? -1, tie }));
+  order.sort((a, b) => a.seenAt - b.seenAt || a.tie - b.tie);
+  return order.slice(0, size).map((entry) => entry.id);
 }
 
 // Checks the chosen exams and that the pool can fill both modules without repeats. With `access`,
 // the exams must be open to the account, and "all exams" (no ids) means all exams open to it.
 // Without it (continuing a full test already begun) nothing is checked against the plan.
-async function checkedMockPool(section: Section, ids: string[], access?: UserAccess): Promise<{ paperIds: mongoose.Types.ObjectId[]; pool: Candidate[] }> {
+// Chosen exams that cannot fill both modules (an exam with no Math, or too few questions) are
+// topped up from the account's other exams (`extraPaperIds`), used only for what is missing.
+async function checkedMockPool(
+  userId: string,
+  section: Section,
+  ids: string[],
+  access?: UserAccess,
+  // Without `access`: which other exams may top up the pool (continuing a full test).
+  openTo?: UserAccess,
+): Promise<{ paperIds: mongoose.Types.ObjectId[]; extraPaperIds: mongoose.Types.ObjectId[]; pool: Candidate[] }> {
   let paperIds = [...new Set(ids)].map((id) => new mongoose.Types.ObjectId(id));
   let limited = false;
   if (paperIds.length > 0) {
@@ -353,16 +456,25 @@ async function checkedMockPool(section: Section, ids: string[], access?: UserAcc
       limited = true;
     }
   }
-  const format = MOCK_FORMAT[section];
-  const pool = await mockPool(section, paperIds);
-  if (pool.length < format.questionsPerModule * 2) {
+  const needed = MOCK_FORMAT[section].questionsPerModule * 2;
+  const distinct = (candidates: Candidate[]) => new Set(candidates.map((candidate) => candidate.key)).size;
+  let pool = await mockPool(userId, section, paperIds);
+  let extraPaperIds: mongoose.Types.ObjectId[] = [];
+  if (paperIds.length > 0 && !limited && distinct(pool) < needed) {
+    const chosen = new Set(paperIds.map(String));
+    extraPaperIds = (await baseCatalog()).exams
+      .filter((exam) => exam.sections[section] && !chosen.has(exam.sections[section]!.paperId) && (!(access ?? openTo) || (access ?? openTo)!.content(exam.examId)))
+      .map((exam) => new mongoose.Types.ObjectId(exam.sections[section]!.paperId));
+    if (extraPaperIds.length > 0) pool = [...pool, ...(await mockPool(userId, section, extraPaperIds, true))];
+  }
+  if (distinct(pool) < needed) {
     throw AppError.badRequest(
-      limited
-        ? `A ${SECTION_LABELS[section]} mock needs ${format.questionsPerModule * 2} questions; the exams open on the free plan have ${pool.length}. See the Pricing page to upgrade.`
-        : `A ${SECTION_LABELS[section]} mock needs ${format.questionsPerModule * 2} questions; the selected exams have ${pool.length}. Choose more exams.`,
+      limited || extraPaperIds.length > 0
+        ? `A ${SECTION_LABELS[section]} mock needs ${needed} questions; the exams open to your account have ${distinct(pool)}. See the Pricing page to upgrade.`
+        : `A ${SECTION_LABELS[section]} mock needs ${needed} questions; the selected exams have ${distinct(pool)}. Choose more exams.`,
     );
   }
-  return { paperIds, pool };
+  return { paperIds, extraPaperIds, pool };
 }
 
 // One module of an uploaded practice test, in the test's own order.
@@ -375,7 +487,7 @@ async function fixedModule(paperId: mongoose.Types.ObjectId, module: MockModule)
 // Where a mock's questions come from: drawn from a pool of bank questions, or the fixed modules
 // of an uploaded practice test (one section's paper).
 type MockSource =
-  | { pool: Candidate[]; paperIds: mongoose.Types.ObjectId[] }
+  | { pool: Candidate[]; paperIds: mongoose.Types.ObjectId[]; extraPaperIds: mongoose.Types.ObjectId[] }
   | { fixed: { paperId: mongoose.Types.ObjectId; testUploadId: mongoose.Types.ObjectId } };
 
 // Builds Module 1 and saves a new mock attempt. Its clock starts now.
@@ -388,7 +500,7 @@ async function startMock(
   const moduleOne =
     "fixed" in source
       ? await fixedModule(source.fixed.paperId, "m1")
-      : orderModule(pickModule(source.pool, format.questionsPerModule, "m1", new Set()), options.section).map((candidate) => new mongoose.Types.ObjectId(candidate.id));
+      : drawModule(source.pool, options.section, "m1", new Set(), (await settingsService.getAdaptive()).officialPattern);
   const attempt = await AttemptModel.create({
     userId,
     kind: "mock",
@@ -397,6 +509,7 @@ async function startMock(
     section: options.section,
     paperId: "fixed" in source ? source.fixed.paperId : null,
     paperIds: "fixed" in source ? [source.fixed.paperId] : source.paperIds,
+    extraPaperIds: "fixed" in source ? [] : source.extraPaperIds,
     testUploadId: "fixed" in source ? source.fixed.testUploadId : null,
     timed: options.timed,
     timeMultiplier: options.timeMultiplier,
@@ -418,7 +531,7 @@ async function submitModuleOne(attempt: AttemptDoc): Promise<AttemptDoc> {
   const graded = await gradeItems(itemsWithOpenView(attempt, attempt.items, now));
   const moduleOne = graded.filter((item) => item.module === "m1");
   const m1Correct = moduleOne.filter((item) => item.correct === true).length;
-  const { routingThresholdPercent } = await settingsService.getAdaptive();
+  const { routingThresholdPercent, officialPattern } = await settingsService.getAdaptive();
   const required = requiredForHard(moduleOne.length, routingThresholdPercent);
   const m2Type: MockModule = m1Correct >= required ? "m2_hard" : "m2_easy";
 
@@ -426,10 +539,16 @@ async function submitModuleOne(attempt: AttemptDoc): Promise<AttemptDoc> {
   if (attempt.testUploadId && attempt.paperId) {
     moduleTwo = await fixedModule(attempt.paperId, m2Type);
   } else {
-    const pool = await mockPool(attempt.section, attempt.paperIds);
-    const format = MOCK_FORMAT[attempt.section];
-    const used = new Set(moduleOne.map((item) => String(item.questionId)));
-    moduleTwo = orderModule(pickModule(pool, format.questionsPerModule, m2Type, used), attempt.section).map((candidate) => new mongoose.Types.ObjectId(candidate.id));
+    // The same pool as Module 1, top-up included.
+    const extra = attempt.extraPaperIds ?? [];
+    const pool = [
+      ...(await mockPool(String(attempt.userId), attempt.section, attempt.paperIds)),
+      ...(extra.length > 0 ? await mockPool(String(attempt.userId), attempt.section, extra, true) : []),
+    ];
+    // Module 1's questions, and any question that looks the same, are not used again.
+    const moduleOneIds = new Set(moduleOne.map((item) => String(item.questionId)));
+    const used = new Set(pool.filter((candidate) => moduleOneIds.has(candidate.id)).map((candidate) => candidate.key));
+    moduleTwo = drawModule(pool, attempt.section, m2Type, used, officialPattern);
   }
 
   const updated = await AttemptModel.findOneAndUpdate(
@@ -632,11 +751,7 @@ export const practiceService = {
 
     // A free account's daily drill limit cuts the set to what is left today.
     const size = drillSize(access, Math.min(input.limit ?? MAX_QUESTIONS_PER_ATTEMPT, MAX_QUESTIONS_PER_ATTEMPT));
-    const picked = await QuestionModel.aggregate<{ _id: mongoose.Types.ObjectId }>([
-      { $match: match },
-      { $sample: { size } },
-      { $project: { _id: 1 } },
-    ]);
+    const picked = await freshFirst(userId, section, match, size);
     if (picked.length === 0) throw AppError.badRequest("No questions match those filters");
 
     const attempt = await AttemptModel.create({
@@ -648,7 +763,7 @@ export const practiceService = {
       paperId: paper._id,
       timed: input.timed,
       timeLimitSeconds: input.timed ? (input.timeMinutes ?? 30) * 60 : null,
-      items: picked.map((row) => ({ questionId: row._id })),
+      items: picked.map((questionId) => ({ questionId })),
     });
     return toSummary(attempt.toObject(), paper.title);
   },
@@ -679,7 +794,7 @@ export const practiceService = {
       ]);
       if (answered.length > 0) match._id = { $nin: answered.map((row) => row._id) };
     }
-    const picked = await QuestionModel.aggregate<{ _id: mongoose.Types.ObjectId }>([{ $match: match }, { $sample: { size: drillSize(access, input.count) } }, { $project: { _id: 1 } }]);
+    const picked = await freshFirst(userId, input.section, match, drillSize(access, input.count));
     if (picked.length === 0) throw AppError.badRequest("No questions match those filters");
 
     const label = input.skills.length === 1 ? input.skills[0]! : input.topics.length === 1 ? input.topics[0]! : SECTION_LABELS[input.section];
@@ -694,7 +809,7 @@ export const practiceService = {
       paperId: null,
       timed: input.timed,
       timeLimitSeconds: input.timed ? minutes * 60 : null,
-      items: picked.map((row) => ({ questionId: row._id })),
+      items: picked.map((questionId) => ({ questionId })),
     });
     return toSummary(attempt.toObject(), "All exams");
   },
@@ -719,10 +834,10 @@ export const practiceService = {
   // Starts an adaptive mock: builds Module 1 now. Module 2 is built when Module 1 is submitted.
   async createMock(userId: string, input: CreateMockInput, access: UserAccess): Promise<AttemptSummary> {
     requireFeature(access, "mocks");
-    const { paperIds, pool } = await checkedMockPool(input.section, input.paperIds, access);
+    const { paperIds, extraPaperIds, pool } = await checkedMockPool(userId, input.section, input.paperIds, access);
     const attempt = await startMock(userId, {
       section: input.section,
-      source: { pool, paperIds },
+      source: { pool, paperIds, extraPaperIds },
       timed: input.timed,
       timeMultiplier: input.timeMultiplier as TimeMultiplier,
       name: input.name || `Adaptive ${SECTION_LABELS[input.section]} mock`,
@@ -739,8 +854,8 @@ export const practiceService = {
       return this.createPracticeTest(userId, input.testUploadId, input);
     }
     requireFeature(access, "full_tests");
-    const rw = await checkedMockPool("reading_writing", input.paperIds.reading_writing, access);
-    const math = await checkedMockPool("math", input.paperIds.math, access);
+    const rw = await checkedMockPool(userId, "reading_writing", input.paperIds.reading_writing, access);
+    const math = await checkedMockPool(userId, "math", input.paperIds.math, access);
     const fullTest = await FullTestModel.create({
       userId,
       name: input.name || "Full practice test",
@@ -750,7 +865,7 @@ export const practiceService = {
     });
     const attempt = await startMock(userId, {
       section: "reading_writing",
-      source: { pool: rw.pool, paperIds: rw.paperIds },
+      source: { pool: rw.pool, paperIds: rw.paperIds, extraPaperIds: rw.extraPaperIds },
       timed: input.timed,
       timeMultiplier: input.timeMultiplier as TimeMultiplier,
       name: `${fullTest.name} — Reading and Writing`,
@@ -793,7 +908,8 @@ export const practiceService = {
   },
 
   // Ends the break: starts the Math section. Calling it again returns the same Math section.
-  async continueFullTest(userId: string, fullTestId: string): Promise<FullTestSummary> {
+  // `access` only decides which other exams may top up a Math pool the chosen exams cannot fill.
+  async continueFullTest(userId: string, fullTestId: string, access?: UserAccess): Promise<FullTestSummary> {
     const fullTest = await loadFullTest(userId, fullTestId);
     if (fullTest.mathAttemptId) return fullTestSummary(userId, fullTest);
     const rw = fullTest.readingWritingAttemptId ? await loadAttempt(userId, String(fullTest.readingWritingAttemptId)) : null;
@@ -804,8 +920,8 @@ export const practiceService = {
       const math = await testUploadService.sectionPaper(String(fullTest.testUploadId), "math", false);
       source = { fixed: { paperId: math.paperId, testUploadId: fullTest.testUploadId } };
     } else {
-      const math = await checkedMockPool("math", fullTest.paperIds.math.map(String));
-      source = { pool: math.pool, paperIds: math.paperIds };
+      const math = await checkedMockPool(userId, "math", fullTest.paperIds.math.map(String), undefined, access);
+      source = { pool: math.pool, paperIds: math.paperIds, extraPaperIds: math.extraPaperIds };
     }
     let attempt: AttemptDoc;
     try {
@@ -908,6 +1024,19 @@ export const practiceService = {
 
     const answer = input.answer !== undefined ? (input.answer === "" ? null : input.answer) : item.answer;
     return { position, answered: answer !== null, flagged: input.flagged ?? item.flagged, checked: item.checked };
+  },
+
+  // Replaces the student's highlights and notes on one question. Like answers: only while the
+  // attempt runs, and in a mock only in the current module.
+  async saveAnnotations(userId: string, attemptId: string, position: number, input: SaveAnnotationsInput): Promise<Annotation[]> {
+    const attempt = await loadAttempt(userId, attemptId);
+    if (attempt.status !== "active") throw AppError.conflict("This attempt has ended");
+    itemAt(attempt, position);
+    const filter: Record<string, unknown> = { _id: attempt._id, status: "active" };
+    if (attempt.kind === "mock") filter.currentModule = attempt.currentModule;
+    const result = await AttemptModel.updateOne(filter, { $set: { [`items.${position - 1}.annotations`]: input.annotations } });
+    if (result.matchedCount === 0) throw AppError.conflict("This module has already been submitted");
+    return input.annotations;
   },
 
   // Reveals the answer to one drill question. The question is locked afterwards.

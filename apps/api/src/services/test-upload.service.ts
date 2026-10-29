@@ -12,7 +12,7 @@
 // its questions join drills and random mocks; students can also take it as a fixed full test.
 import katex from "katex";
 import mongoose from "mongoose";
-import { PaperModel, QuestionModel, TestUploadModel, trusted, type TestUploadDoc, type TestUploadSectionDoc } from "@satsharks/db";
+import { contentKeyOf, PaperModel, QuestionModel, TestUploadModel, trusted, type TestUploadDoc, type TestUploadSectionDoc } from "@satsharks/db";
 import {
   EXAM_UPLOAD_SOURCE,
   FULL_TEST_QUESTION_TAG,
@@ -457,7 +457,7 @@ async function publish(upload: TestUploadDoc): Promise<TestUploadDoc> {
       status: "hidden" as const,
       tags,
     })),
-  );
+  ).map((doc) => ({ ...doc, contentKey: contentKeyOf(doc) }));
 
   // No transaction (Atlas free tier): papers first, so a concurrent publish fails on their unique
   // key before inserting anything; on any later failure everything this call created is removed.

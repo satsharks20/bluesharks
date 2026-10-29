@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import mongoose from "mongoose";
 import {
   DIFFICULTIES,
@@ -59,8 +60,30 @@ export interface QuestionDoc {
   // "full-test" and "full-test:<upload id>" on questions of an uploaded practice test, which only
   // that test may use.
   tags: string[];
+  // Fingerprint of what the student sees (contentKeyOf). The source reuses questions across exam
+  // dates under different ids; equal keys are one question to a student. null until backfilled.
+  contentKey?: string | null;
   createdAt: Date;
   updatedAt: Date;
+}
+
+// Text, figures and images of a question, with markup, case, spacing, punctuation and the source's
+// "[bluebooky.com]" labels left out, hashed. Two questions with the same key look the same.
+export function contentKeyOf(question: Pick<QuestionDoc, "prompt" | "passage" | "choices" | "assets"> & { viz?: unknown }): string {
+  const text = (value: string | null | undefined) =>
+    (value ?? "")
+      .toLowerCase()
+      .replace(/bluebooky\.com/g, "")
+      .replace(/[^a-z0-9]+/g, "");
+  const figure = (value: unknown) => (value == null ? "" : text(JSON.stringify(value)));
+  const parts = [
+    text(question.passage),
+    text(question.prompt),
+    figure(question.viz),
+    ...question.choices.map((choice) => `${text(choice.text)}${figure(choice.viz)}`),
+    ...question.assets.map((asset) => asset.url),
+  ];
+  return createHash("sha1").update(parts.join("|")).digest("hex");
 }
 
 const choiceSchema = new Schema<QuestionChoice>(
@@ -115,6 +138,7 @@ const questionSchema = new Schema<QuestionDoc>(
     sourceMetadata: { type: Schema.Types.Mixed, default: {} },
     status: { type: String, enum: PAPER_STATUSES, default: "draft" },
     tags: { type: [String], default: [] },
+    contentKey: { type: String, default: null },
   },
   { timestamps: true, minimize: false },
 );

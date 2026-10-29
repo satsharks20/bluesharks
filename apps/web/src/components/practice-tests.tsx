@@ -103,8 +103,9 @@ export function StartPracticeTest({ test, onClose }: { test: PracticeTestListing
 // Active uploaded tests, practice tests and exams alike (exams are shown on their exam card).
 export const usePracticeTests = () => useQuery({ queryKey: ["practice", "tests"], queryFn: () => api<{ tests: PracticeTestListing[] }>("/api/practice/tests") });
 
-// Fixed full-length tests published by SAT Sharks. Hidden when there are none.
-export function PracticeTests({ showFree = false }: { showFree?: boolean }) {
+// Fixed full-length tests published by SAT Sharks. Hidden when there are none. Question counts are
+// for premium accounts only (client, 2026-10-30).
+export function PracticeTests({ showFree = false, showCounts = false }: { showFree?: boolean; showCounts?: boolean }) {
   const tests = usePracticeTests();
   const [starting, setStarting] = useState<PracticeTestListing | null>(null);
   const list = tests.data?.tests.filter((test) => test.kind === "practice") ?? [];
@@ -124,9 +125,11 @@ export function PracticeTests({ showFree = false }: { showFree?: boolean }) {
               </div>
               <h3 className="flex min-h-[44px] items-center text-[18px] font-bold leading-snug tracking-tight">{test.title}</h3>
               <ContentPills label={test.label} pinned={test.pinned} free={test.free} showFree={showFree} />
-              <p className="text-xs text-slate-600">
-                RW: {total(test, "reading_writing")} · Math: {total(test, "math")} questions
-              </p>
+              {showCounts && (
+                <p className="text-xs text-slate-600">
+                  RW: {total(test, "reading_writing")} · Math: {total(test, "math")} questions
+                </p>
+              )}
               {test.locked && (
                 <span>
                   <PaidBadge reason={test.lockReason ?? "paid"} />

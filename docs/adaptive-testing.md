@@ -52,11 +52,11 @@ Each statement below says whether it was observed, inferred, or is unknown.
 | --- | --- |
 | Sections | Math: 22 + 22 questions, 35 minutes per module. Reading & Writing: 27 + 27, 32 minutes per module |
 | Question pool | Published questions of the chosen section, from every exam or the exams the student picks |
-| Module 1 | One question per skill in turn until full, random within a skill |
+| Module make-up | **Official pattern** (default since 2026-10-30, see below): fixed count and order of question types. Admin → Settings can switch back to the old spread: one question per skill in turn until full |
 | Module 2 (harder) | Same spread; within each skill hard first, then medium, unlabelled, easy |
 | Module 2 (easier) | Same spread; within each skill easy first, then medium, unlabelled, hard |
-| Repeats | Module 2 never contains a Module 1 question |
-| Order in a module | Math: easier to harder. Reading & Writing: official domain order (Craft and Structure, Information and Ideas, Standard English Conventions, Expression of Ideas), easier to harder within a domain |
+| Repeats | A student gets questions never given to them before (any drill, mock or full test) first; when an exam runs out, the ones given longest ago. Questions with the same fingerprint (`contentKey`, the source reuses questions) count as one, so a test never has the same question twice and seeing one twin counts as seeing both. Module 2 never contains a Module 1 question |
+| Order in a module | Reading & Writing: the official skill order below, easier to harder within each skill (Boundaries and Form, Structure, and Sense mixed as one block). Math: easier to harder, grid-ins at positions 5, 6, 11, 12, 17, 18 |
 | Routing | Harder Module 2 when Module 1 correct ≥ ⌈size × threshold⌉. Default **65%**: 15 of 22 (Math), 18 of 27 (Reading & Writing). Admin setting, applied when Module 1 is submitted |
 | Building Module 2 | Only after Module 1 is submitted, on the server. Before that it does not exist |
 | Timing | Each module has its own server-side clock. When Module 1's time runs out it is submitted automatically and Module 2 starts; when Module 2's runs out the mock ends |
@@ -71,6 +71,55 @@ What this means in practice:
   source. Where hard-tagged questions exist in the pool, the harder module uses them first (in
   the end-to-end test with all Math exams published, 21 of 22 were hard-tagged); otherwise it is
   a spread like the source's own. Setting difficulty in the admin question editor improves it.
+
+## The official module pattern (2026-10-30)
+
+The client asked for every mock to have the same make-up as Bluebook. Sources:
+
+- **College Board practice tests 4–10** (`satsuite.collegeboard.org/media/pdf/sat-practice-test-N-digital.pdf`
+  and `…-answers-digital.pdf`, the nondigital versions of the Bluebook tests): all 14 Reading and
+  Writing modules (33 questions each on paper) classified by the official question stems. Every
+  module has the same order: Words in Context → Text Structure and Purpose → Cross-Text Connections
+  → Central Ideas and Details → Command of Evidence (textual and quantitative mixed) → Inferences →
+  Boundaries / Form, Structure, and Sense (mixed) → Transitions → Rhetorical Synthesis. Cross-Text
+  appears once per test.
+- **The bank**: skill shares of the 7,720 Reading and Writing questions of real digital
+  administrations, a second, independent measure of the mix.
+- **College Board's domain ranges** per section: Reading and Writing 13–15 / 12–14 / 11–15 / 8–12;
+  Math Algebra 13–15, Advanced Math 13–15, Problem-Solving and Data Analysis 5–7, Geometry and
+  Trigonometry 5–7.
+
+Per 27 questions:
+
+| Skill | Paper forms, scaled | Bank mix | Module 1 | Module 2 |
+| --- | --- | --- | --- | --- |
+| Words in Context | 4.21 | 3.89 | 4 | 4 |
+| Text Structure and Purpose | 2.75 | 2.16 | 2 | 3 |
+| Cross-Text Connections | 0.41 | 0.54 | 1 | 0 |
+| Central Ideas and Details | 1.69 | 1.86 | 2 | 2 |
+| Command of Evidence (half on a table or graph) | 3.86 | 4.08 | 4 | 4 |
+| Inferences | 1.75 | 2.00 | 2 | 2 |
+| Boundaries | 6.37 together | 3.21 | 3 | 3 |
+| Form, Structure, and Sense | | 2.81 | 3 | 3 |
+| Transitions | 2.98 | 3.00 | 3 | 3 |
+| Rhetorical Synthesis | 2.92 | 3.48 | 3 | 3 |
+
+Math per 22 (domains only; the official modules are not sorted by topic): Algebra 8 / 7, Advanced
+Math 7 / 8, Problem-Solving and Data Analysis 4 / 3, Geometry and Trigonometry 3 / 4 (15 / 15 / 7 / 7
+a section), each spread over its skills. Grid-ins: 6 a module (the paper forms have 7 of 27, 26%;
+the bank 27%), in pairs after runs of multiple-choice questions as on the paper forms. **The exact
+grid-in places of the digital forms are not published**; positions 5–6, 11–12, 17–18 scale the
+paper pattern (`MATH_SPR_POSITIONS`).
+
+When an exam cannot fill a type with new questions: the same domain, then any new question, and
+only then a question seen before (longest ago first).
+
+**Small exams (top-up):** 11 of the 26 exams have no Math, and a few have fewer questions than two
+modules need. When the chosen exams cannot fill both modules, the pool is topped up with the
+student's other open exams (`extraPaperIds` on the attempt, so Module 2 draws from the same pool).
+Never-seen questions of the chosen exams come first, then never-seen questions of the other
+exams, then repeats. The pattern lives in `MODULE_PATTERN`
+(packages/types); the builder is `pickPatternModule` (apps/api/src/services/mock-assembly.ts).
 
 Not yet built: a 400–1600 scaled score (needs SAT Sharks' conversion tables), a full test of
 both sections in one sitting with the break between them, and extended time.

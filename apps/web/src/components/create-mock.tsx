@@ -63,9 +63,12 @@ export function CreateMock({ catalog, onClose }: { catalog: PracticeCatalog; onC
     const needed = MOCK_FORMAT[section].questionsPerModule * 2;
     const size = chosen.reduce((sum, exam) => sum + (exam.sections[section]?.questionCount ?? 0), 0);
     const paperIds = selected.length === 0 ? [] : chosen.map((exam) => exam.sections[section]?.paperId).filter((id): id is string => !!id);
-    return { section, needed, size, paperIds };
+    // Chosen exams too small (or without this section at all) are topped up by the server from the
+    // account's other open exams; only when those cannot fill it either is the test refused.
+    const available = exams.reduce((sum, exam) => sum + (exam.sections[section]?.questionCount ?? 0), 0);
+    return { section, needed, size, paperIds, toppedUp: size < needed && available >= needed };
   });
-  const short = pools.filter((pool) => pool.size < pool.needed);
+  const short = pools.filter((pool) => pool.size < pool.needed && !pool.toppedUp);
   const totalQuestions = pools.reduce((sum, pool) => sum + pool.needed, 0);
   const totalMinutes = sections.reduce((sum, section) => sum + MOCK_FORMAT[section].minutesPerModule * 2, 0) * multiplier;
 
@@ -197,12 +200,17 @@ export function CreateMock({ catalog, onClose }: { catalog: PracticeCatalog; onC
                 </dd>
               </div>
             )}
-            {pools.map((pool) => (
-              <div key={pool.section} className="flex justify-between gap-3">
-                <dt className="font-semibold">{mode === "full" ? `${SECTION_LABELS[pool.section]} pool` : "Questions in pool"}</dt>
-                <dd className={pool.size < pool.needed ? "font-bold text-red-700" : ""}>{pool.size.toLocaleString()}</dd>
-              </div>
-            ))}
+            {/* Pool sizes: premium accounts only (client, 2026-10-30). A topped-up pool is not shown:
+                students are not told that an exam lacks a section's questions (client). */}
+            {catalog.access.paid &&
+              pools
+                .filter((pool) => !pool.toppedUp)
+                .map((pool) => (
+                  <div key={pool.section} className="flex justify-between gap-3">
+                    <dt className="font-semibold">{mode === "full" ? `${SECTION_LABELS[pool.section]} pool` : "Questions in pool"}</dt>
+                    <dd className={pool.size < pool.needed ? "font-bold text-red-700" : ""}>{pool.size.toLocaleString()}</dd>
+                  </div>
+                ))}
           </dl>
 
           <label className="block text-sm font-bold">
@@ -246,7 +254,7 @@ export function CreateMock({ catalog, onClose }: { catalog: PracticeCatalog; onC
           <p className="text-xs text-slate-600">Module 2 adapts to your Module 1 result. A submitted module cannot be reopened.</p>
           {short.length > 0 && exams.length > 0 && (
             <Notice tone="error">
-              {short.map((pool) => `${SECTION_LABELS[pool.section]} needs ${pool.needed} questions; these exams have ${pool.size}.`).join(" ")} Choose more exams.
+              {short.map((pool) => (catalog.access.paid ? `${SECTION_LABELS[pool.section]} needs ${pool.needed} questions; these exams have ${pool.size}.` : `These exams do not have enough ${SECTION_LABELS[pool.section]} questions.`)).join(" ")} Choose more exams.
             </Notice>
           )}
           {error && <Notice tone="error">{error}</Notice>}

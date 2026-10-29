@@ -4,7 +4,7 @@
 what is half-done, and the traps already found. Keep it up to date: every session that changes the
 project adds to the change log at the bottom and corrects anything above that is no longer true.
 
-Last updated: 2026-10-23 (security pass: real client IPs for rate limits via `PROXY_SECRET`, new limits, web security headers, Next 15.5.28; not committed. Earlier: Week 4 API live on Railway after the outage).
+Last updated: 2026-10-30 (no repeats incl. top-up of exams without Math, official module pattern, Highlights & Notes, counts for premium only; fingerprints written to Atlas; code not committed. Earlier: security pass `1c8f2d3`, live).
 
 ---
 
@@ -113,13 +113,38 @@ Last updated: 2026-10-23 (security pass: real client IPs for rate limits via `PR
 - **201 question images** copied from the source into our MongoDB `assets` collection and served
   at `/api/assets/<key>`. No question points at the source's servers.
 - **Practice drills:** pick exam, section, domains, skills, difficulty, count, timer, exclude
-  answered; Bluebook-style test screen; per-question "Check"; results and review.
+  answered; Bluebook-style test screen; per-question "Check"; results and review. Since 2026-10-30
+  questions never given to the student come first, then the ones given longest ago (`freshFirst`).
+- **No repeats (2026-10-30, client):** every question has a fingerprint `contentKey`
+  (`contentKeyOf` in `question.model.ts`: text, figures, images, normalised; set on import, upload
+  and admin edit; backfilled on Atlas with `apps/api/src/cli/backfill-content-keys.ts`). 9,927
+  published questions = 9,044 distinct; 684 twin groups, **445 of them inside a single exam**
+  (the source reused questions), which is why the client saw repeats inside one module. "Seen" =
+  given in any of the student's attempts in that section, deleted ones too (`seenByKey`). Drills,
+  mocks and full tests take never-seen first, then oldest seen; one per fingerprint per test.
+- **Top-up of small exams (2026-10-30, client):** **11 of the 26 exams have no Math** and October
+  07, 2023 has 22 (two modules need 44); May 06, 2023 has 38 R&W (needs 54). When the chosen exams
+  cannot fill both modules, `checkedMockPool` adds the account's other open exams as `fallback`
+  candidates, stored on the attempt (`extraPaperIds`) so Module 2 uses the same pool. Order:
+  never-seen questions of the chosen exams, then never-seen of other exams, then repeats. The start
+  dialog no longer says "Choose more exams" and **says nothing about it** (client: students must
+  not be told an exam has no Math; a note was added and removed the same day; premium accounts'
+  pool-size line is hidden for a topped-up section too); refused only when even all open exams are
+  too few. A full test on an exam
+  without Math already sent no Math exam ("all exams"); the dialog used to block it.
+  `continueFullTest` takes the account's access only to choose top-up exams (no plan check).
 - **Adaptive mocks:** one section in two modules. Math 22+22 (35 min each), Reading & Writing 27+27
   (32 min each). Module 2 is built on the server after Module 1 is submitted: harder if Module 1
   correct ≥ ⌈size × threshold⌉, otherwise easier. Threshold **65%** (15/22 Math, 18/27 R&W), an
-  admin setting. Modules are spread across skills; harder Module 2 prefers hard-tagged questions,
-  easier prefers easy-tagged; no repeats; each module has its own server clock; a submitted
-  module cannot be reopened. Results show per-module scores and the route.
+  admin setting. **Modules follow the official pattern** (2026-10-30, `MODULE_PATTERN`; evidence in
+  `docs/adaptive-testing.md`): R&W 27 = Words in Context 4, Text Structure 2/3, Cross-Text 1/0,
+  Central Ideas 2, Command of Evidence 4 (2 on a table/graph), Inferences 2, Boundaries 3 + Form 3
+  (mixed), Transitions 3, Rhetorical Synthesis 3, in that order, easier→harder per block; Math 22 =
+  Algebra 8/7, Advanced 7/8, PSDA 4/3, Geometry 3/4 with 6 grid-ins at 5–6, 11–12, 17–18.
+  Admin → Settings "Official question pattern" switches back to the old spread
+  (`AdaptiveSettings.officialPattern`, default on). Harder Module 2 prefers hard-tagged questions,
+  easier prefers easy-tagged; never-seen before seen; each module has its own server clock; a
+  submitted module cannot be reopened. Results show per-module scores and the route.
 - **Full test:** Reading & Writing mock → 10-minute break (skippable, auto-continues if the page is
   open) → Math mock (`fulltests` collection; Math created only when the break ends).
 - **Extended time** 1.5× / 2× chosen when starting a mock or full test (multiplies every module).
@@ -144,6 +169,18 @@ Last updated: 2026-10-23 (security pass: real client IPs for rate limits via `PR
   `choices[].image` (URL = set, null = remove an image but keep a drawn figure, left out = keep;
   new URLs must be uploaded assets, `requireUploaded`). The server names the empty choices
   ("Choice A, B, C are empty: …") instead of the old "needs every choice filled in".
+- **Highlights & Notes (2026-10-30, client: "like Bluebook"):** header button + select words in the
+  passage or question → toolbar: yellow / blue / pink, underline, note, delete; click a highlight
+  to change it. Stored per attempt item (`items.annotations`: target, start/end character offsets
+  of the rendered text, colour, underline, note ≤ 500, ≤ 60 per question), saved by
+  `PUT /api/practice/attempts/:id/questions/:n/annotations` (only while running and in the current
+  module), returned with each question. Painted with the CSS Custom Highlight API
+  (`components/annotations.tsx`, `::highlight(sat-*)` in globals.css), so question markup is never
+  changed; a browser without it gets an "update your browser" message. Not on answer choices.
+  Before this there was **no highlighter at all** (students lost a plain text selection).
+- **Question counts for premium only (2026-10-30, client):** exam-card Total/RW/Math pills, the
+  drill dialog's section counts, the mock dialog's pool sizes and the practice-test card counts show
+  only when `access.paid` (UI only; the catalog API still sends them).
 - **Test screen tools:** timer (hide/show), directions, mark for review, cross-out (ABC),
   question navigator, **Desmos calculator** (`desmos.com/testing/collegeboard/graphing` in an
   iframe) **docked on the left like Bluebook since 2026-10-20** (`components/calculator-dock.tsx`):
@@ -350,7 +387,7 @@ Last updated: 2026-10-23 (security pass: real client IPs for rate limits via `PR
 - A legal contact address on Terms/Privacy/Refund.
 - AI extraction from free-form PDFs (proposal Checkpoint 1.2). Only the strict-format test upload
   exists. Building papers from approved bank questions.
-- Highlighter/notes, line reader (Checkpoint 2.1). Re-grading old attempts after an answer key is fixed.
+- Line reader (Checkpoint 2.1). Re-grading old attempts after an answer key is fixed.
 - Week 3 gaps: history starts on 2026-10-14 for questions (older attempts were never logged; their
   test scores do appear in test history and the prediction). Points/streak reminders are emails only
   (no in-app notifications).
@@ -563,6 +600,7 @@ Web calls go to its own origin; `next.config.ts` rewrites `/api/*` to `API_URL`
 | 2026-10-12 | Two hidden developer accounts (one admin with the same access as `admin2.0@gmail.com`, one paid student), not in the Users list or any count |
 | 2026-10-19 | Pricing by region (Umair): a signed-in student sees only the plans of their account's country (PK → PKR, else USD), with no currency switch. Account country, not IP, for students (VPNs, students abroad; checkout charges the same currency). Visitors: Vercel IP country first, switch kept. Accounts without a country and staff keep the switch |
 | 2026-10-19 | A student who has not chosen a test date sees "The next SAT is in N days" / "Next SAT in N days" (the next date from Admin → SAT dates), never "Your test" |
+| 2026-10-30 | Client via Umair: no repeated questions (unseen first; when an exam runs out, **reuse the ones seen longest ago**, not block); the **official Bluebook module pattern** with exact counts (Claude to research; College Board practice tests used); **Bluebook-style Highlights & Notes**; exam question counts **for premium accounts only**. Umair allowed writing the fingerprint field to the live database and using a bluecorn token as needed |
 | 2026-10-08 | An upload asks where it goes: Practice tests or Exams. A real SAT (e.g. December) goes to Exams. Umair chose "exam card + full test": it behaves like the other exams (drill, random mocks) and can also be taken whole as a fixed adaptive test |
 
 ## 7. Facts about the source (verified)
@@ -705,6 +743,13 @@ Web calls go to its own origin; `next.config.ts` rewrites `/api/*` to `API_URL`
 
 ## 9. Open items and suggestions
 
+000. **Deploying the 2026-10-30 work:** API (Railway) and web (Vercel) together; the web's
+   highlight save calls a new route. The API change is safe for the current web (new optional
+   fields only). Fingerprints are already on Atlas (all 10,221). A test in progress at deploy time
+   keeps its questions; its Module 2 is built with the new rules. Check Railway did not "Skip" the
+   build (§8). Open: the exact places of Math grid-ins in digital modules are not published
+   (positions scale the paper forms); a bluecorn Reading and Writing mock could still be observed
+   for comparison, but needs a fresh token from Umair (the one in `.env` expired 2026-10-02).
 00. **Before deploying the 2026-10-23 security pass: set `PROXY_SECRET`** (one random value, 32+
    characters) **in both Vercel and Railway**, and **`NODE_ENV=production` in Railway** (live
    `/api/health` still reports `development`). After the deploy, check that requests through the
@@ -1141,3 +1186,30 @@ Newest last. One entry per session or major step.
   pages; clean-clone build in `apps/web` (Vercel-style) passes on Next 15.5.28 with middleware.
   Not checked on Vercel itself. Needs `PROXY_SECRET` in Vercel + Railway (§9 item 00). Remaining
   audit: PostCSS inside Next 15 (build-time, own CSS only; fix is Next 16). Not committed.
+- **2026-10-30 — Four client requests (Umair): no repeats, Bluebook pattern, Highlights & Notes,
+  premium-only counts.** Found first: a mock's Module 1 never looked at earlier attempts; drills'
+  "exclude answered" was off by default and only skipped answered ones; 445 twin groups inside one
+  exam; no highlighter existed (only Mark for Review, which was fine); counts shown to everyone.
+  Built as in §2 (No repeats, Adaptive mocks, Highlights & Notes, counts). Pattern research:
+  College Board practice tests 4–10 (PDFs) classified by stem, 14 R&W modules; checked against the
+  bank's skill mix (read-only Atlas query) and College Board's domain ranges; details in
+  `docs/adaptive-testing.md`. A domain short of new questions takes new ones from elsewhere before
+  any repeat (found by the new e2e check). New: `contentKey` on questions, `items.annotations`,
+  `AdaptiveSettings.officialPattern`, `MODULE_PATTERN` / `MATH_SPR_POSITIONS` / annotation types
+  (packages/types), `saveAnnotationsSchema`, backfill CLI. **Atlas write (Umair allowed):**
+  `contentKey` set on all 10,221 questions (dry run first; second run sets 0). Checked: type check
+  (all workspaces); **80 unit tests** (9 new for the pattern, repeats and twins); **28 e2e checks**
+  (new: pattern counts and order in both modules, 2 of 4 evidence on a table, no twin twice, mock 2
+  shares nothing with mock 1, mock 3 uses the 2 unseen then only the oldest mock's, highlights save
+  / reload / 400 / 404 / 409 after submit and end, drills new-first then oldest, pattern switch);
+  **17 browser checks** (e2e API on 4100 + `.next-test` web on 3100, headless Chrome): free
+  dashboard without counts, premium with; select → toolbar → yellow, change to blue + underline,
+  away to other questions and back (Next/Back and the question menu), reload, click a highlight,
+  note saved, delete, phone 390px with no sideways scroll, no console errors. Not committed.
+  **Follow-up the same day (client: an exam with zero Math must still give both Math modules):**
+  top-up of small exams as in §2. Checked: type check; **82 unit tests** (2 new: chosen exam's new
+  questions before other exams', an exam with none); e2e check extended (10-question Math exam →
+  44 distinct, all 10 used, none of the seen exam, Module 2 from the top-up; full test on an exam
+  without Math → Math 22 + 22), **28 e2e checks pass**; 5 browser checks (dialog explains, no error,
+  Start enabled, full test starts, no console errors). Then the dialog's note was removed at the
+  client's request (web type check only). Not committed.

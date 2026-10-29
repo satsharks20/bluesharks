@@ -1299,5 +1299,190 @@ async function run() {
     await QuestionModel.deleteOne({ _id: blank._id });
   });
 
+  await check("no repeats: new questions first, oldest-seen top-up, one of each twin; the official pattern; highlights saved", async () => {
+    const { apiRateLimit, authRateLimit } = await import("../../src/middleware/rate-limit");
+    for (const address of ["127.0.0.1", "::1", "::ffff:127.0.0.1"]) await Promise.all([apiRateLimit.resetKey(address), authRateLimit.resetKey(address)]);
+    const { contentKeyOf } = await import("@satsharks/db");
+    const { MODULE_PATTERN } = await import("@satsharks/types");
+    // One Reading & Writing exam: 12 questions per skill; the last of each skill is a twin of the one
+    // before it (same text and table under another id, as the source reuses questions): 110 distinct.
+    const paper = await PaperModel.create({ title: "Pattern exam — reading_writing", source: "bluecorn", sourcePaperId: "pattern-rw", status: "published", sections: ["reading_writing"], questionCount: 120 });
+    const rwSkills = MODULE_PATTERN.reading_writing.map((entry) => ({ skill: (entry.match as { skill: string }).skill, topic: entry.domain! }));
+    const docs = rwSkills.flatMap(({ skill, topic }, s) =>
+      Array.from({ length: 12 }, (_, i) => {
+        const n = i === 11 ? 10 : i;
+        const text = `Pattern ${s}-${n}`;
+        const doc = {
+          paperId: paper._id, source: "bluecorn", sourceQuestionId: `pattern-${s}-${i}`, section: "reading_writing", moduleType: "none", questionNumber: s * 12 + i + 1, questionType: "mcq",
+          difficulty: ["easy", "medium", "hard"][i % 3], topic, skill, prompt: text, passage: `Passage for ${text}`, assets: [],
+          viz: skill === "Command of Evidence" && n % 2 === 0 ? { type: "table", headers: ["a"], rows: [[String(n)]] } : null,
+          choices: ["A", "B", "C", "D"].map((key) => ({ key, text: key })), correctAnswer: { choiceKey: "A", acceptedValues: [] }, status: "published",
+        };
+        return { ...doc, contentKey: contentKeyOf(doc as never) };
+      }),
+    );
+    await QuestionModel.insertMany(docs);
+    const keyOf = new Map(docs.map((doc, i) => [doc.sourceQuestionId, doc.contentKey] as const));
+    assert.equal(new Set(keyOf.values()).size, 110);
+
+    const login = { name: "E2E Pattern", email: "phase1-test-pattern@example.com", password: "password-123", country: "PK" };
+    const learner = client();
+    await learner.call("POST", "/api/auth/register", login);
+    await UserModel.updateOne({ email: login.email }, { $set: { plan: "paid", paidPlan: "monthly", planExpiresAt: null } });
+    await learner.call("POST", "/api/auth/login", { email: login.email, password: login.password });
+
+    // The admin setting is on by default and stays on when an older page sends only the threshold.
+    assert.equal((await admin.call("GET", "/api/admin/settings/adaptive")).json.data.officialPattern, true);
+    assert.equal((await admin.call("PUT", "/api/admin/settings/adaptive", { routingThresholdPercent: 65 })).json.data.officialPattern, true);
+
+    const itemsOf = async (attemptId: string) => {
+      const attempt = (await AttemptModel.findById(attemptId).lean())!;
+      const questions = await QuestionModel.find({ _id: trusted({ $in: attempt.items.map((item) => item.questionId) }) }).lean();
+      const byId = new Map(questions.map((question) => [String(question._id), question]));
+      return attempt.items.map((item) => ({ module: item.module, ...byId.get(String(item.questionId))! }));
+    };
+    const takeMock = async () => {
+      const started = await learner.call("POST", "/api/practice/mocks", { section: "reading_writing", paperIds: [String(paper._id)], timed: false });
+      assert.equal(started.status, 201, JSON.stringify(started.json.error));
+      const attemptId = started.json.data.attempt.id as string;
+      assert.equal((await learner.call("POST", `/api/practice/attempts/${attemptId}/submit-module`)).status, 200);
+      return attemptId;
+    };
+    const conventions = new Set(["Boundaries", "Form, Structure, and Sense"]);
+    const shape = (skills: (string | null)[]) => skills.map((skill) => (conventions.has(skill ?? "") ? "Conventions" : skill));
+
+    // Mock 1: both modules follow the official pattern, in order; nothing appears twice.
+    const first = await takeMock();
+    const one = await itemsOf(first);
+    for (const [module, field] of [["m1", "m1"], ["m2_easy", "m2"]] as const) {
+      const got = one.filter((item) => (module === "m1" ? item.module === "m1" : item.module !== "m1"));
+      const expected = MODULE_PATTERN.reading_writing.flatMap((entry) => Array<string>(entry[field]).fill((entry.match as { skill: string }).skill));
+      assert.deepEqual(shape(got.map((item) => item.skill)), shape(expected), `pattern of ${module}`);
+      assert.equal(got.filter((item) => item.skill === "Command of Evidence" && item.viz).length, 2, "two evidence questions on a table");
+    }
+    assert.equal(new Set(one.map((item) => item.contentKey)).size, 54, "no twin twice in one mock");
+
+    // Highlights: saved per question, given back, refused when invalid, closed with the module.
+    await learner.call("POST", `/api/practice/attempts/${first}/end`);
+    const second = await (async () => {
+      const started = await learner.call("POST", "/api/practice/mocks", { section: "reading_writing", paperIds: [String(paper._id)], timed: false });
+      return started.json.data.attempt.id as string;
+    })();
+    const mark = { id: "h1", target: "passage", start: 0, end: 7, color: "blue", underline: true, note: "main claim" };
+    const path = `/api/practice/attempts/${second}/questions/1`;
+    assert.equal((await learner.call("PUT", `${path}/annotations`, { annotations: [mark] })).status, 200);
+    assert.deepEqual((await learner.call("GET", path)).json.data.question.annotations, [mark]);
+    assert.equal((await learner.call("PUT", `${path}/annotations`, { annotations: [{ ...mark, end: 0 }] })).status, 400, "empty range");
+    assert.equal((await learner.call("PUT", `${path}/annotations`, { annotations: [{ ...mark, color: "green" }] })).status, 400, "unknown colour");
+    assert.equal((await learner.call("PUT", `${path}/annotations`, { annotations: Array.from({ length: 61 }, (_, i) => ({ ...mark, id: `h${i}` })) })).status, 400, "too many");
+    assert.equal((await student.call("PUT", `${path}/annotations`, { annotations: [] })).status, 404, "someone else's attempt");
+    // A question opened again (another device, a reload) still has them; the answer is untouched.
+    assert.equal((await learner.call("GET", path)).json.data.question.annotations.length, 1);
+    assert.equal((await learner.call("POST", `/api/practice/attempts/${second}/submit-module`)).status, 200);
+    assert.equal((await learner.call("PUT", `${path}/annotations`, { annotations: [] })).status, 409, "Module 1 is closed");
+    await learner.call("POST", `/api/practice/attempts/${second}/end`);
+    assert.equal((await learner.call("PUT", `/api/practice/attempts/${second}/questions/30/annotations`, { annotations: [] })).status, 409, "attempt ended");
+
+    // Mock 2 shares nothing with mock 1 (110 distinct questions, 108 used by the two mocks).
+    const two = await itemsOf(second);
+    const firstKeys = new Set(one.map((item) => item.contentKey));
+    assert.equal(two.filter((item) => firstKeys.has(item.contentKey)).length, 0, "mock 2 repeats nothing from mock 1");
+    assert.equal(new Set(two.map((item) => item.contentKey)).size, 54);
+
+    // Mock 3: the two never-seen questions first, then only the ones seen longest ago (mock 1).
+    const third = await takeMock();
+    const three = await itemsOf(third);
+    const secondKeys = new Set(two.map((item) => item.contentKey));
+    const unseen = [...new Set(keyOf.values())].filter((key) => !firstKeys.has(key) && !secondKeys.has(key));
+    assert.equal(unseen.length, 2);
+    assert.ok(unseen.every((key) => three.some((item) => item.contentKey === key)), "every never-seen question is used");
+    assert.equal(three.filter((item) => secondKeys.has(item.contentKey)).length, 0, "nothing from the most recent mock");
+    assert.equal(new Set(three.map((item) => item.contentKey)).size, 54);
+    await learner.call("POST", `/api/practice/attempts/${third}/end`);
+
+    // Drills from a Math exam of 40 questions, 15 at a time: new first, then the oldest seen.
+    const mathPaper = await PaperModel.create({ title: "Drill exam — math", source: "bluecorn", sourcePaperId: "pattern-math", status: "published", sections: ["math"], questionCount: 40 });
+    await QuestionModel.insertMany(
+      Array.from({ length: 40 }, (_, i) => ({
+        paperId: mathPaper._id, source: "bluecorn", sourceQuestionId: `drill-${i}`, section: "math", moduleType: "none", questionNumber: i + 1, questionType: "mcq",
+        topic: "Algebra", skill: "Linear functions", prompt: `Drill question ${i}`, passage: null, contentKey: `drill-key-${i}`,
+        choices: ["A", "B", "C", "D"].map((key) => ({ key, text: key })), correctAnswer: { choiceKey: "A", acceptedValues: [] }, status: "published",
+      })),
+    );
+    const drill = async () => {
+      const started = await learner.call("POST", "/api/practice/attempts", { paperId: String(mathPaper._id), limit: 15 });
+      assert.equal(started.status, 201, JSON.stringify(started.json.error));
+      return (await AttemptModel.findById(started.json.data.attempt.id).lean())!.items.map((item) => String(item.questionId));
+    };
+    const d1 = await drill();
+    const d2 = await drill();
+    assert.equal(d2.filter((id) => d1.includes(id)).length, 0, "second drill: all new");
+    const d3 = await drill();
+    const rest = (await QuestionModel.find({ paperId: mathPaper._id, status: "published" }).select("_id").lean()).map((q) => String(q._id)).filter((id) => !d1.includes(id) && !d2.includes(id));
+    assert.equal(rest.length, 10);
+    assert.ok(rest.every((id) => d3.includes(id)), "the never-seen ones first");
+    assert.equal(d3.filter((id) => d2.includes(id)).length, 0, "then the oldest drill's, not the latest");
+
+    // Turned off, mocks are built one question per skill in turn (and still never repeat a twin).
+    assert.equal((await admin.call("PUT", "/api/admin/settings/adaptive", { routingThresholdPercent: 65, officialPattern: false })).json.data.officialPattern, false);
+    const spread = await takeMock();
+    assert.equal(new Set((await itemsOf(spread)).map((item) => item.contentKey)).size, 54);
+    await admin.call("PUT", "/api/admin/settings/adaptive", { routingThresholdPercent: 65, officialPattern: true });
+
+    // An exam too small for two Math modules (10 questions) is topped up from other exams: all 10
+    // are used, the rest are new questions of other exams (not the drill exam, all seen).
+    const mathDomains = MODULE_PATTERN.math.map((entry) => (entry.match as { topic: string }).topic);
+    const mathExam = (id: string, count: number, topicOf: (i: number) => string) =>
+      PaperModel.create({ title: `${id} — math`, source: "bluecorn", sourcePaperId: id, status: "published", sections: ["math"], questionCount: count }).then(async (made) => {
+        await QuestionModel.insertMany(
+          Array.from({ length: count }, (_, i) => ({
+            paperId: made._id, source: "bluecorn", sourceQuestionId: `${id}-${i}`, section: "math", moduleType: "none", questionNumber: i + 1, questionType: i % 4 === 0 ? "spr" : "mcq",
+            topic: topicOf(i), skill: `${topicOf(i)} skill`, prompt: `${id} question ${i}`, passage: null, contentKey: `${id}-key-${i}`,
+            choices: i % 4 === 0 ? [] : ["A", "B", "C", "D"].map((key) => ({ key, text: key })), correctAnswer: { choiceKey: i % 4 === 0 ? null : "A", acceptedValues: i % 4 === 0 ? ["1"] : [] }, status: "published",
+          })),
+        );
+        return made;
+      });
+    const tiny = await mathExam("tiny-math", 10, () => "Algebra");
+    const other = await mathExam("other-math", 80, (i) => mathDomains[i % 4]!);
+    const { invalidateCatalog } = await import("../../src/services/practice.service");
+    invalidateCatalog();
+    const topped = await learner.call("POST", "/api/practice/mocks", { section: "math", paperIds: [String(tiny._id)], timed: false });
+    assert.equal(topped.status, 201, JSON.stringify(topped.json.error));
+    const toppedId = topped.json.data.attempt.id as string;
+    const extra = (await AttemptModel.findById(toppedId).lean())!.extraPaperIds.map(String);
+    assert.ok(extra.includes(String(other._id)) && !extra.includes(String(tiny._id)), "other exams recorded as top-up");
+    assert.equal((await learner.call("POST", `/api/practice/attempts/${toppedId}/submit-module`)).status, 200);
+    const toppedItems = await itemsOf(toppedId);
+    assert.equal(toppedItems.length, 44, "both Math modules are full");
+    assert.equal(new Set(toppedItems.map((item) => item.contentKey)).size, 44);
+    assert.equal(toppedItems.filter((item) => String(item.paperId) === String(tiny._id)).length, 10, "all of the small exam's questions are used");
+    assert.equal(toppedItems.filter((item) => String(item.paperId) === String(mathPaper._id)).length, 0, "new questions of other exams before repeats");
+    assert.ok(toppedItems.filter((item) => item.module !== "m1").some((item) => String(item.paperId) === String(other._id)), "Module 2 uses the top-up too");
+    await learner.call("POST", `/api/practice/attempts/${toppedId}/end`);
+
+    // A full test on an exam with no Math at all: Math still has both modules, from other exams.
+    const full = await learner.call("POST", "/api/practice/full-tests", { paperIds: { reading_writing: [String(paper._id)], math: [] }, timed: false });
+    assert.equal(full.status, 201, JSON.stringify(full.json.error));
+    const fullId = full.json.data.fullTest.id as string;
+    await learner.call("POST", `/api/practice/attempts/${full.json.data.fullTest.readingWriting.id}/end`);
+    const continued = await learner.call("POST", `/api/practice/full-tests/${fullId}/continue`);
+    assert.equal(continued.status, 200, JSON.stringify(continued.json.error));
+    const mathSection = continued.json.data.fullTest.math.id as string;
+    assert.equal((await learner.call("POST", `/api/practice/attempts/${mathSection}/submit-module`)).status, 200);
+    assert.equal((await itemsOf(mathSection)).length, 44, "Math: 22 + 22");
+    await learner.call("POST", `/api/practice/attempts/${mathSection}/end`);
+    await QuestionModel.deleteMany({ paperId: trusted({ $in: [tiny._id, other._id] }) });
+    await PaperModel.deleteMany({ _id: trusted({ $in: [tiny._id, other._id] }) });
+    const { FullTestModel } = await import("@satsharks/db");
+    await FullTestModel.deleteMany({ _id: fullId });
+    invalidateCatalog();
+
+    await AttemptModel.deleteMany({ userId: (await UserModel.findOne({ email: login.email }).lean())!._id });
+    await UserModel.deleteOne({ email: login.email });
+    await QuestionModel.deleteMany({ paperId: trusted({ $in: [paper._id, mathPaper._id] }) });
+    await PaperModel.deleteMany({ _id: trusted({ $in: [paper._id, mathPaper._id] }) });
+  });
+
   console.log(`\n${passed} end-to-end checks passed.`);
 }

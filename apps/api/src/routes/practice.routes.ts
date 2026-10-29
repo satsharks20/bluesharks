@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { bankDrillSchema, createAttemptSchema, createFullTestSchema, createMockSchema, createReportSchema, retryDrillSchema, saveAnswerSchema } from "@satsharks/validation";
+import { bankDrillSchema, createAttemptSchema, createFullTestSchema, createMockSchema, createReportSchema, retryDrillSchema, saveAnnotationsSchema, saveAnswerSchema } from "@satsharks/validation";
 import { createBankDrill, createRetryDrill } from "../controllers/student.controller";
 import {
   checkQuestion,
@@ -19,6 +19,7 @@ import {
   listFullTests,
   listPracticeTests,
   reportQuestion,
+  saveAnnotations,
   saveAnswer,
   submitModule,
 } from "../controllers/practice.controller";
@@ -50,5 +51,6 @@ practiceRouter.post("/attempts/:id/end", endAttempt);
 practiceRouter.get("/attempts/:id/result", getResult);
 practiceRouter.get("/attempts/:id/questions/:position", getQuestion);
 practiceRouter.patch("/attempts/:id/questions/:position", validateBody(saveAnswerSchema), saveAnswer);
+practiceRouter.put("/attempts/:id/questions/:position/annotations", validateBody(saveAnnotationsSchema), saveAnnotations);
 practiceRouter.post("/attempts/:id/questions/:position/check", checkQuestion);
 practiceRouter.post("/attempts/:id/questions/:position/report", reportRateLimit, validateBody(createReportSchema), reportQuestion);

@@ -1,5 +1,5 @@
 // Writes a normalized paper into MongoDB. Source-agnostic: it only sees SAT Sharks shapes.
-import { PaperModel, QuestionModel } from "@satsharks/db";
+import { contentKeyOf, PaperModel, QuestionModel } from "@satsharks/db";
 import type { NormalizedPaper, NormalizedQuestion } from "@satsharks/validation";
 
 export interface ImportResult {
@@ -34,7 +34,7 @@ export async function upsertPaper(paper: NormalizedPaper, questions: NormalizedQ
           moduleType: question.moduleType,
           sourceQuestionId: question.sourceQuestionId,
         },
-        update: { $set: question, $setOnInsert: { status } },
+        update: { $set: { ...question, contentKey: contentKeyOf({ ...question, assets: question.assets ?? [] }) }, $setOnInsert: { status } },
         upsert: true,
       },
     })),

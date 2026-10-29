@@ -19,6 +19,28 @@ body {
   @apply bg-slate-50 text-slate-900 antialiased;
 }
 
+/* Highlights & Notes on the test screen (components/annotations.tsx). Later names paint on top. */
+::highlight(sat-yellow) {
+  background-color: #fde68a;
+}
+::highlight(sat-blue) {
+  background-color: #bfdbfe;
+}
+::highlight(sat-pink) {
+  background-color: #fbcfe8;
+}
+::highlight(sat-underline) {
+  text-decoration: underline 2px #0f172a;
+}
+/* A highlight with a note, not underlined: dotted line under it. */
+::highlight(sat-note) {
+  text-decoration: underline dotted 2px #0f172a;
+}
+/* The highlight whose menu is open. */
+::highlight(sat-active) {
+  background-color: rgb(15 23 42 / 0.14);
+}
+
 /* The dashed multi-colour rule that frames the test screen. */
 .test-rule {
   height: 3px;

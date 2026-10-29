@@ -6,6 +6,7 @@ import {
   type CreateFullTestInput,
   type CreateMockInput,
   type CreateReportInput,
+  type SaveAnnotationsInput,
   type SaveAnswerInput,
 } from "@satsharks/validation";
 import { userAccess } from "../services/access.service";
@@ -55,6 +56,10 @@ export async function saveAnswer(req: Request, res: Response): Promise<void> {
   sendOk(res, { item: await practiceService.saveAnswer(userId(req), attemptId(req), position(req), req.body as SaveAnswerInput) });
 }
 
+export async function saveAnnotations(req: Request, res: Response): Promise<void> {
+  sendOk(res, { annotations: await practiceService.saveAnnotations(userId(req), attemptId(req), position(req), req.body as SaveAnnotationsInput) });
+}
+
 export async function checkQuestion(req: Request, res: Response): Promise<void> {
   sendOk(res, { question: await practiceService.checkQuestion(userId(req), attemptId(req), position(req)) });
 }
@@ -90,7 +95,7 @@ export async function getFullTest(req: Request, res: Response): Promise<void> {
 }
 
 export async function continueFullTest(req: Request, res: Response): Promise<void> {
-  sendOk(res, { fullTest: await practiceService.continueFullTest(userId(req), fullTestId(req)) });
+  sendOk(res, { fullTest: await practiceService.continueFullTest(userId(req), fullTestId(req), await access(req)) });
 }
 
 export async function reportQuestion(req: Request, res: Response): Promise<void> {

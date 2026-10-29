@@ -80,6 +80,22 @@ and score is kept, and you can publish it again any time).
 Uploaded full tests (*Full tests* in the sidebar) are switched on with *Activate*; an inactive
 published test can also be **scheduled** to activate itself.
 
+## Mock question pattern (Settings → Adaptive routing)
+
+**Official question pattern** (on by default): every mock module built from the question bank has
+the same make-up and order as the official SAT — Reading and Writing from Words in Context to
+Rhetorical Synthesis with a fixed number of each type, Math with fixed counts per domain and the
+typed-answer questions in fixed places. Turn it off only if an exam is too small to fill the
+pattern; modules are then one question per skill in turn. Either way, students get questions they
+have not seen before first, and a question the source repeated under two numbers is never given
+twice. Uploaded practice tests always keep their own order.
+
+An exam with no Math (11 of the current exams) or too few questions can still be taken as a full
+test or mock: its own questions are used first and the rest come from the student's other open
+exams. Students are not told: the start dialog looks the same as for any other exam.
+
+Free accounts no longer see how many questions an exam or test holds; premium accounts do.
+
 ## Access (what free students can open)
 
 - **Ways of practising**: drills, adaptive section mocks, adaptive full tests and full analytics —

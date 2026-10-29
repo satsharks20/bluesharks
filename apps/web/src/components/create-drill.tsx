@@ -136,7 +136,8 @@ export function CreateDrill({ catalog, initialExamId, onClose }: { catalog: Prac
                   }`}
                 >
                   {entry === "math" ? "Math Section" : "Reading & Writing"}
-                  {allExams ? "" : exam?.sections[entry] ? ` (${exam.sections[entry]!.questionCount})` : " (none)"}
+                  {/* Question counts: premium accounts only (client, 2026-10-30). */}
+                  {allExams ? "" : exam?.sections[entry] ? (catalog.access.paid ? ` (${exam.sections[entry]!.questionCount})` : "") : " (none)"}
                 </button>
               ))}
             </div>

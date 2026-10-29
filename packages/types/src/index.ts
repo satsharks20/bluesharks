@@ -155,6 +155,83 @@ export const DEFAULT_ROUTING_THRESHOLD_PERCENT = 65;
 
 export interface AdaptiveSettings {
   routingThresholdPercent: number;
+  // Build bank mocks to the official module pattern (MODULE_PATTERN). Off: one question per skill
+  // in turn, as before 2026-10-30.
+  officialPattern: boolean;
+}
+
+// The official make-up of a bank-built module, in the order its questions appear. Taken from the
+// fourteen modules of College Board's practice tests 4–10 (paper versions, 33 Reading and Writing
+// questions a module) scaled to the digital 27, and checked against the skill mix of the 7,720
+// Reading and Writing questions of real digital administrations in the bank (2026-10-30, see
+// docs/adaptive-testing.md). Neighbouring entries with the same `group` are mixed together and
+// ordered easier to harder as one block (the official tests interleave Boundaries with Form,
+// Structure, and Sense). Math is grouped by domain, not skill, because official Math modules are
+// not sorted by topic: the picked questions are ordered easier to harder with the typed-answer
+// questions in MATH_SPR_POSITIONS.
+export interface PatternEntry {
+  // Reading and Writing: a skill. Math: a domain (topic).
+  match: { skill: string } | { topic: string };
+  // Reading and Writing: the skill's domain, which fills in when the skill runs short.
+  domain?: string;
+  m1: number;
+  m2: number;
+  group?: string;
+  // Math only: how many of the questions are typed answers (grid-ins), per module.
+  sprM1?: number;
+  sprM2?: number;
+}
+
+export const MODULE_PATTERN: Record<Section, readonly PatternEntry[]> = {
+  reading_writing: [
+    { match: { skill: "Words in Context" }, domain: "Craft and Structure", m1: 4, m2: 4 },
+    { match: { skill: "Text Structure and Purpose" }, domain: "Craft and Structure", m1: 2, m2: 3 },
+    // One per section in the official tests, so only Module 1 has it.
+    { match: { skill: "Cross-Text Connections" }, domain: "Craft and Structure", m1: 1, m2: 0 },
+    { match: { skill: "Central Ideas and Details" }, domain: "Information and Ideas", m1: 2, m2: 2 },
+    // About half of them on a table or graph (COMMAND_OF_EVIDENCE_SKILL).
+    { match: { skill: "Command of Evidence" }, domain: "Information and Ideas", m1: 4, m2: 4 },
+    { match: { skill: "Inferences" }, domain: "Information and Ideas", m1: 2, m2: 2 },
+    { match: { skill: "Boundaries" }, domain: "Standard English Conventions", m1: 3, m2: 3, group: "conventions" },
+    { match: { skill: "Form, Structure, and Sense" }, domain: "Standard English Conventions", m1: 3, m2: 3, group: "conventions" },
+    { match: { skill: "Transitions" }, domain: "Expression of Ideas", m1: 3, m2: 3 },
+    { match: { skill: "Rhetorical Synthesis" }, domain: "Expression of Ideas", m1: 3, m2: 3 },
+  ],
+  // 15 / 15 / 7 / 7 over the section (College Board: 13–15, 13–15, 5–7, 5–7).
+  math: [
+    { match: { topic: "Algebra" }, m1: 8, m2: 7, sprM1: 2, sprM2: 2 },
+    { match: { topic: "Advanced Math" }, m1: 7, m2: 8, sprM1: 2, sprM2: 2 },
+    { match: { topic: "Problem-Solving and Data Analysis" }, m1: 4, m2: 3, sprM1: 1, sprM2: 1 },
+    { match: { topic: "Geometry and Trigonometry" }, m1: 3, m2: 4, sprM1: 1, sprM2: 1 },
+  ],
+};
+
+export const COMMAND_OF_EVIDENCE_SKILL = "Command of Evidence";
+
+// Where a Math module's typed-answer questions sit (1-based). The official tests put them in pairs
+// after each run of multiple-choice questions (paper: 6–7, 13–14, 20–21, 27 of 27).
+export const MATH_SPR_POSITIONS: readonly number[] = [5, 6, 11, 12, 17, 18];
+
+// ---------- highlights and notes (test screen) ----------
+
+export const HIGHLIGHT_COLORS = ["yellow", "blue", "pink"] as const;
+export type HighlightColor = (typeof HIGHLIGHT_COLORS)[number];
+// The parts of a question a student can mark: the passage and the question itself (Bluebook does
+// not mark answer choices).
+export const ANNOTATION_TARGETS = ["passage", "prompt"] as const;
+export type AnnotationTarget = (typeof ANNOTATION_TARGETS)[number];
+export const MAX_ANNOTATIONS_PER_QUESTION = 60;
+export const MAX_NOTE_LENGTH = 500;
+
+// A highlight: characters [start, end) of the target's text as shown on screen.
+export interface Annotation {
+  id: string;
+  target: AnnotationTarget;
+  start: number;
+  end: number;
+  color: HighlightColor;
+  underline: boolean;
+  note: string;
 }
 
 // Extended-time accommodations: every module's time limit is multiplied by this.
@@ -458,6 +535,8 @@ export interface AttemptQuestion {
   flagged: boolean;
   checked: boolean;
   result: QuestionResult | null;
+  // The student's highlights and notes on this question in this attempt.
+  annotations: Annotation[];
 }
 
 export interface ReviewQuestion extends AttemptQuestion {

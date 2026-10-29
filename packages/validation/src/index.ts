@@ -25,6 +25,10 @@ import {
   sectionQuestionCount,
   TEST_UPLOAD_KINDS,
   TIME_MULTIPLIERS,
+  ANNOTATION_TARGETS,
+  HIGHLIGHT_COLORS,
+  MAX_ANNOTATIONS_PER_QUESTION,
+  MAX_NOTE_LENGTH,
   PAID_PLANS,
   PRICING_PLAN_IDS,
   USER_PLANS,
@@ -185,6 +189,26 @@ export const saveAnswerSchema = z
   .refine((value) => value.answer !== undefined || value.flagged !== undefined, "Nothing to save");
 export type SaveAnswerInput = z.infer<typeof saveAnswerSchema>;
 
+// The whole list of a question's highlights and notes, replaced on every change.
+export const saveAnnotationsSchema = z.object({
+  annotations: z
+    .array(
+      z
+        .object({
+          id: z.string().regex(/^[A-Za-z0-9_-]{1,40}$/),
+          target: z.enum(ANNOTATION_TARGETS),
+          start: z.number().int().min(0).max(100_000),
+          end: z.number().int().min(1).max(100_000),
+          color: z.enum(HIGHLIGHT_COLORS),
+          underline: z.boolean().default(false),
+          note: z.string().max(MAX_NOTE_LENGTH).default(""),
+        })
+        .refine((value) => value.end > value.start, "A highlight must cover at least one character"),
+    )
+    .max(MAX_ANNOTATIONS_PER_QUESTION),
+});
+export type SaveAnnotationsInput = z.infer<typeof saveAnnotationsSchema>;
+
 export const positionSchema = z.coerce.number().int().min(1).max(1000);
 
 const timeMultiplierSchema = z
@@ -223,6 +247,8 @@ export type CreateFullTestInput = z.infer<typeof createFullTestSchema>;
 
 export const adaptiveSettingsSchema = z.object({
   routingThresholdPercent: z.number().int().min(1).max(100),
+  // Older admin pages send only the threshold; the pattern then stays on.
+  officialPattern: z.boolean().default(true),
 });
 
 // One raw-to-scaled table: entry n is the score for n correct. Scores only go up (or stay the same)

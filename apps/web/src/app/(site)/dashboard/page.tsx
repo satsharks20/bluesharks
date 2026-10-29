@@ -74,6 +74,8 @@ function Home() {
     !!access &&
     !access.paid &&
     (exams.some((exam) => exam.lockReason === "paid") || Object.values(access.features).includes(false) || !!uploadedTests.data?.tests.some((test) => test.lockReason === "paid") || !!access.dailyDrill);
+  // How many questions each exam holds is shown to premium accounts only (client, 2026-10-30).
+  const showCounts = !!access?.paid;
   const inviteLocked = exams.some((exam) => exam.lockReason === "invite") || !!uploadedTests.data?.tests.some((test) => test.lockReason === "invite");
   const years = useMemo(() => [...new Set(exams.map(yearOf).filter((value): value is number => value !== null))].sort((a, b) => b - a), [exams]);
   const visible = exams.filter((exam) => (year === "all" || yearOf(exam) === year) && (season === "all" || seasonOf(exam) === season));
@@ -172,13 +174,15 @@ function Home() {
             return (
               <div key={exam.examId} className="flex flex-col justify-between gap-4 rounded-[14px] border border-black bg-white p-4 text-black sm:p-5">
                 <div className="flex flex-col gap-3">
-                  <div className="flex flex-wrap items-center justify-between gap-2">
-                    <span className={`${pill} border-brand-500 text-brand-500`}>Total: {rw + math}</span>
-                    <span className="flex items-center gap-1.5">
-                      <span className={`${pill} border-black`}>RW: {rw}</span>
-                      <span className={`${pill} border-black`}>Math: {math}</span>
-                    </span>
-                  </div>
+                  {showCounts && (
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <span className={`${pill} border-brand-500 text-brand-500`}>Total: {rw + math}</span>
+                      <span className="flex items-center gap-1.5">
+                        <span className={`${pill} border-black`}>RW: {rw}</span>
+                        <span className={`${pill} border-black`}>Math: {math}</span>
+                      </span>
+                    </div>
+                  )}
                   <h3 className="flex min-h-[44px] items-center text-[18px] font-bold leading-snug tracking-tight">{exam.name}</h3>
                   <ContentPills label={exam.label} pinned={exam.pinned} free={exam.free} showFree={limited} />
                   {exam.locked && (
@@ -216,7 +220,7 @@ function Home() {
         </div>
       </section>
 
-      <PracticeTests showFree={limited} />
+      <PracticeTests showFree={limited} showCounts={showCounts} />
 
       {drillExam !== undefined && catalog.data && <CreateDrill catalog={catalog.data} initialExamId={drillExam ?? undefined} onClose={() => setDrillExam(undefined)} />}
       {mockOpen && catalog.data && <CreateMock catalog={catalog.data} onClose={() => setMockOpen(false)} />}

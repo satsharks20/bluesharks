@@ -1,5 +1,9 @@
 import mongoose from "mongoose";
 import {
+  ANNOTATION_TARGETS,
+  HIGHLIGHT_COLORS,
+  MAX_NOTE_LENGTH,
+  type Annotation,
   ATTEMPT_KINDS,
   ATTEMPT_ORIGINS,
   ATTEMPT_STATUSES,
@@ -31,6 +35,8 @@ export interface AttemptItem {
   // Every different answer the student gave, oldest first (last 10), to spot a right answer
   // changed to a wrong one. Empty for attempts made before it was recorded.
   answers: string[];
+  // Highlights and notes the student made on this question (test screen).
+  annotations: Annotation[];
 }
 
 export interface AttemptDoc {
@@ -45,6 +51,9 @@ export interface AttemptDoc {
   paperId: mongoose.Types.ObjectId | null;
   // Mock: the exams its question pool was restricted to. Empty = every published exam.
   paperIds: mongoose.Types.ObjectId[];
+  // Mock: other exams that top up a pool the chosen ones cannot fill (an exam without Math, or too
+  // few questions). Their questions are used only for what the chosen exams lack.
+  extraPaperIds: mongoose.Types.ObjectId[];
   status: AttemptStatus;
   timed: boolean;
   // Extended-time accommodation (1, 1.5 or 2). Already applied to timeLimitSeconds.
@@ -95,6 +104,19 @@ export interface AttemptDoc {
   updatedAt: Date;
 }
 
+const annotationSchema = new Schema<Annotation>(
+  {
+    id: { type: String, required: true },
+    target: { type: String, enum: ANNOTATION_TARGETS, required: true },
+    start: { type: Number, required: true },
+    end: { type: Number, required: true },
+    color: { type: String, enum: HIGHLIGHT_COLORS, default: "yellow" },
+    underline: { type: Boolean, default: false },
+    note: { type: String, default: "", maxlength: MAX_NOTE_LENGTH },
+  },
+  { _id: false },
+);
+
 const itemSchema = new Schema<AttemptItem>(
   {
     questionId: { type: Schema.Types.ObjectId, ref: "Question", required: true },
@@ -105,6 +127,7 @@ const itemSchema = new Schema<AttemptItem>(
     correct: { type: Boolean, default: null },
     timeSpentSeconds: { type: Number, default: 0 },
     answers: { type: [String], default: [] },
+    annotations: { type: [annotationSchema], default: [] },
   },
   { _id: false },
 );
@@ -118,6 +141,7 @@ const attemptSchema = new Schema<AttemptDoc>(
     section: { type: String, enum: SECTIONS, required: true },
     paperId: { type: Schema.Types.ObjectId, ref: "Paper", default: null },
     paperIds: { type: [Schema.Types.ObjectId], ref: "Paper", default: [] },
+    extraPaperIds: { type: [Schema.Types.ObjectId], ref: "Paper", default: [] },
     status: { type: String, enum: ATTEMPT_STATUSES, default: "active" },
     timed: { type: Boolean, default: false },
     timeMultiplier: { type: Number, enum: TIME_MULTIPLIERS, default: 1 },

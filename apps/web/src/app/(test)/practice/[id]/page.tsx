@@ -1,9 +1,10 @@
 "use client";
 
 import { useParams, useRouter } from "next/navigation";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
-import type { AttemptNavItem, AttemptQuestion, AttemptSummary } from "@satsharks/types";
+import type { Annotation, AttemptNavItem, AttemptQuestion, AttemptSummary, HighlightColor } from "@satsharks/types";
+import { addAnnotation, AnnotationMenu, AnnotationRegion, highlightsSupported, NoteEditor, quoteOf, type SelectionInfo } from "@/components/annotations";
 import { Choices, Passage, Prompt, ResponseInput } from "@/components/question";
 import { CalculatorDock } from "@/components/calculator-dock";
 import { DraggablePanel } from "@/components/draggable-panel";
@@ -32,6 +33,12 @@ const ICONS = {
     </>
   ),
   reference: <path d="M4 7l6 10M10 7L4 17M14 9c0-1.4 1-2.3 2.3-2.3 1.2 0 2.2.8 2.2 2 0 2-4.5 3.3-4.5 5.3h4.7" />,
+  annotate: (
+    <>
+      <path d="M14.5 4.5l5 5L10 19H5v-5z" />
+      <path d="M12.5 6.5l5 5M4 21h16" />
+    </>
+  ),
   exit: <path d="M14 4h5v16h-5M10 8l-4 4 4 4M6 12h9" />,
 } as const;
 
@@ -114,6 +121,13 @@ function TestScreen({ attemptId, userName }: { attemptId: string; userName: stri
   const [calculatorUsed, setCalculatorUsed] = useState(false);
   const [moduleNotice, setModuleNotice] = useState<string | null>(null);
   const [reporting, setReporting] = useState(false);
+  // Highlights & Notes: the toolbar at a selection or highlight, and the open note.
+  const [menu, setMenu] = useState<{ rect: DOMRect; selection?: SelectionInfo; id?: string } | null>(null);
+  const [noteId, setNoteId] = useState<string | null>(null);
+  const [canHighlight, setCanHighlight] = useState(false);
+  const screenRef = useRef<HTMLDivElement>(null);
+  // Highlight saves reach the server one at a time, in order, so the last change wins.
+  const annotationSaves = useRef<Promise<unknown>>(Promise.resolve());
   const ending = useRef(false);
   // The typed answer last saved for the current question, to avoid saving unchanged text.
   const savedAnswer = useRef("");
@@ -143,6 +157,12 @@ function TestScreen({ attemptId, userName }: { attemptId: string; userName: stri
     },
     [attemptId, router],
   );
+
+  useEffect(() => setCanHighlight(highlightsSupported()), []);
+  useEffect(() => {
+    setMenu(null);
+    setNoteId(null);
+  }, [position]);
 
   // Initialise from the server once.
   useEffect(() => {
@@ -330,6 +350,70 @@ function TestScreen({ attemptId, userName }: { attemptId: string; userName: stri
     setAnswer(value);
   }
 
+  // Highlights & Notes: shows the change at once, keeps it for coming back, saves it in order.
+  function saveAnnotations(next: Annotation[]) {
+    if (!question) return;
+    const updated = { ...question, annotations: next };
+    setQuestion(updated);
+    remember(updated);
+    const at = question.position;
+    const write = annotationSaves.current.then(() =>
+      api(`/api/practice/attempts/${attemptId}/questions/${at}/annotations`, { method: "PUT", body: { annotations: next } }).catch((caught: Error) =>
+        setError(`Your highlight was not saved: ${caught.message}`),
+      ),
+    );
+    annotationSaves.current = write;
+  }
+
+  const annotations = question?.annotations ?? [];
+  const menuAnnotation = menu?.id ? (annotations.find((annotation) => annotation.id === menu.id) ?? null) : null;
+  const noteAnnotation = noteId ? (annotations.find((annotation) => annotation.id === noteId) ?? null) : null;
+
+  // A colour or underline on a fresh selection makes a highlight; on a highlight it changes it.
+  function styleHighlight(change: { color?: HighlightColor; underline?: boolean }, thenNote = false) {
+    if (menu?.selection) {
+      const { list, id } = addAnnotation(annotations, menu.selection, change.color ?? "yellow", change.underline ?? false);
+      if (!id) {
+        setError("This question has as many highlights as it can hold. Delete one to add another.");
+        return;
+      }
+      saveAnnotations(list);
+      window.getSelection()?.removeAllRanges();
+      setMenu(thenNote ? null : { rect: menu.rect, id });
+      if (thenNote) setNoteId(id);
+      return;
+    }
+    if (!menuAnnotation) return;
+    saveAnnotations(annotations.map((annotation) => (annotation.id === menuAnnotation.id ? { ...annotation, ...change } : annotation)));
+    if (thenNote) {
+      setMenu(null);
+      setNoteId(menuAnnotation.id);
+    }
+  }
+
+  // The header button: highlights the current selection, or explains how.
+  function highlightButton() {
+    if (!canHighlight) {
+      setModuleNotice("This browser cannot show highlights. Update it (or use Chrome, Edge, Safari or Firefox) to use Highlights & Notes.");
+      return;
+    }
+    if (menu?.selection) styleHighlight({ color: "yellow" });
+    else setModuleNotice("Select words in the passage or the question, then pick a colour, underline them or add a note.");
+  }
+
+  const region = (target: "passage" | "prompt", children: ReactNode) => (
+    <AnnotationRegion
+      target={target}
+      annotations={annotations.filter((annotation) => annotation.target === target)}
+      activeId={menu?.id ?? noteId}
+      enabled={canHighlight}
+      onSelect={(selection) => selection && setMenu({ rect: selection.rect, selection })}
+      onOpen={(id, rect) => setMenu({ rect, id })}
+    >
+      {children}
+    </AnnotationRegion>
+  );
+
   async function toggleFlag() {
     if (!current) return;
     const flagged = !current.flagged;
@@ -390,7 +474,7 @@ function TestScreen({ attemptId, userName }: { attemptId: string; userName: stri
         )}
       </div>
       <div className="test-rule mb-4" />
-      <Prompt question={question} />
+      {region("prompt", <Prompt question={question} />)}
       {isSpr ? (
         <ResponseInput
           value={answer}
@@ -427,7 +511,7 @@ function TestScreen({ attemptId, userName }: { attemptId: string; userName: stri
   );
 
   return (
-    <div className="flex h-screen flex-col bg-white">
+    <div ref={screenRef} className="flex h-screen flex-col bg-white">
       <header className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 px-3 py-2 sm:px-8">
         <div className="min-w-0">
           <h1 className="text-sm font-bold leading-tight sm:text-lg">{title}</h1>
@@ -451,6 +535,7 @@ function TestScreen({ attemptId, userName }: { attemptId: string; userName: stri
           )}
         </div>
         <div className="flex items-center justify-end gap-0.5 sm:gap-1">
+          <ToolButton label="Highlights & Notes" icon="annotate" onClick={highlightButton} active={!!menu || !!noteId} />
           {math && <ToolButton label="Calculator" icon="calculator" onClick={() => (setCalculatorUsed(true), setCalculatorOpen((open) => !open))} active={calculatorOpen} />}
           {math && <ToolButton label="Reference" icon="reference" onClick={() => setReferenceOpen((open) => !open)} active={referenceOpen} />}
           <ToolButton
@@ -468,7 +553,7 @@ function TestScreen({ attemptId, userName }: { attemptId: string; userName: stri
       {/* With the calculator open the question moves over beside it (Bluebook), never under it. */}
       <main className="flex min-h-0 flex-1 flex-col lg:flex-row">
         {calculatorUsed && <CalculatorDock open={calculatorOpen} onClose={() => setCalculatorOpen(false)} />}
-        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto lg:h-full lg:overflow-hidden">
+        <div className="min-h-0 min-w-0 flex-1 overflow-y-auto lg:h-full lg:overflow-hidden" onScrollCapture={() => menu && setMenu(null)}>
         {(error || moduleNotice) && (
           <div className="mx-auto max-w-3xl space-y-2 px-4 pt-3">
             {moduleNotice && <Notice tone="info">{moduleNotice}</Notice>}
@@ -479,7 +564,7 @@ function TestScreen({ attemptId, userName }: { attemptId: string; userName: stri
           <div className="mx-auto max-w-3xl px-4">{!error && <Spinner label="Loading question" />}</div>
         ) : split ? (
           <div className="grid grid-cols-1 lg:h-full lg:grid-cols-2">
-            <div className="border-b-4 border-slate-300 px-4 py-5 sm:px-10 sm:py-6 lg:overflow-y-auto lg:border-b-0 lg:border-r-4">{math ? <SprDirections /> : <Passage question={question} />}</div>
+            <div className="border-b-4 border-slate-300 px-4 py-5 sm:px-10 sm:py-6 lg:overflow-y-auto lg:border-b-0 lg:border-r-4">{math ? <SprDirections /> : region("passage", <Passage question={question} />)}</div>
             <div className="px-4 py-5 sm:px-10 sm:py-6 lg:overflow-y-auto">{questionPane}</div>
           </div>
         ) : (
@@ -570,6 +655,36 @@ function TestScreen({ attemptId, userName }: { attemptId: string; userName: stri
         <DraggablePanel title="Reference" onClose={() => setReferenceOpen(false)}>
           <ReferenceSheet />
         </DraggablePanel>
+      )}
+      {menu && question && (
+        <AnnotationMenu
+          rect={menu.rect}
+          current={menuAnnotation}
+          onColor={(color) => styleHighlight({ color })}
+          onUnderline={() => styleHighlight({ underline: !(menuAnnotation?.underline ?? false) })}
+          onNote={() => styleHighlight({}, true)}
+          onDelete={() => {
+            if (menuAnnotation) saveAnnotations(annotations.filter((annotation) => annotation.id !== menuAnnotation.id));
+            setMenu(null);
+          }}
+          onClose={() => setMenu(null)}
+        />
+      )}
+      {noteAnnotation && (
+        <NoteEditor
+          key={noteAnnotation.id}
+          annotation={noteAnnotation}
+          quote={quoteOf(screenRef.current, noteAnnotation)}
+          onSave={(note) => {
+            saveAnnotations(annotations.map((annotation) => (annotation.id === noteAnnotation.id ? { ...annotation, note } : annotation)));
+            setNoteId(null);
+          }}
+          onDeleteNote={() => {
+            saveAnnotations(annotations.map((annotation) => (annotation.id === noteAnnotation.id ? { ...annotation, note: "" } : annotation)));
+            setNoteId(null);
+          }}
+          onClose={() => setNoteId(null)}
+        />
       )}
       {reporting && question && (
         <ReportProblemDialog attemptId={attemptId} position={question.position} questionLabel={`question ${label(question.position)}`} onClose={() => setReporting(false)} />

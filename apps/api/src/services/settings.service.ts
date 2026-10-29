@@ -37,6 +37,8 @@ export const settingsService = {
     return {
       routingThresholdPercent:
         typeof value.routingThresholdPercent === "number" ? value.routingThresholdPercent : DEFAULT_ROUTING_THRESHOLD_PERCENT,
+      // On unless an admin turned it off (settings saved before it existed have no value).
+      officialPattern: value.officialPattern !== false,
     };
   },
 

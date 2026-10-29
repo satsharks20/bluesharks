@@ -37,14 +37,14 @@ function AdaptiveSettingsCard({ canWrite }: { canWrite: boolean }) {
   const valid = Number.isInteger(percent) && percent >= 1 && percent <= 100;
   const need = (size: number) => Math.ceil((size * percent) / 100);
 
-  async function save() {
+  async function save(body: AdaptiveSettings, done: string) {
     setSaving(true);
     setMessage(null);
     try {
-      const saved = await api<AdaptiveSettings>("/api/admin/settings/adaptive", { method: "PUT", body: { routingThresholdPercent: percent } });
+      const saved = await api<AdaptiveSettings>("/api/admin/settings/adaptive", { method: "PUT", body });
       queryClient.setQueryData(["admin", "settings", "adaptive"], saved);
       setValue(null);
-      setMessage({ tone: "info", text: "Saved. Applies to mocks whose Module 1 is submitted from now on." });
+      setMessage({ tone: "info", text: done });
     } catch (caught) {
       setMessage({ tone: "error", text: caught instanceof Error ? caught.message : "Could not save" });
     } finally {
@@ -69,7 +69,11 @@ function AdaptiveSettingsCard({ canWrite }: { canWrite: boolean }) {
         />
         <span className="text-sm font-bold">%</span>
         {canWrite && (
-          <Button size="sm" disabled={saving || !valid || percent === current} onClick={save}>
+          <Button
+            size="sm"
+            disabled={saving || !valid || percent === current}
+            onClick={() => save({ routingThresholdPercent: percent, officialPattern: settings.data?.officialPattern ?? true }, "Saved. Applies to mocks whose Module 1 is submitted from now on.")}
+          >
             {saving ? "Saving…" : "Save"}
           </Button>
         )}
@@ -80,6 +84,27 @@ function AdaptiveSettingsCard({ canWrite }: { canWrite: boolean }) {
           {MOCK_FORMAT.reading_writing.questionsPerModule}
         </p>
       )}
+      <label className="mt-4 flex cursor-pointer items-start gap-2.5 border-t border-slate-200 pt-4 text-sm">
+        <input
+          type="checkbox"
+          checked={settings.data?.officialPattern ?? true}
+          disabled={!canWrite || saving || !settings.data}
+          onChange={(event) =>
+            save(
+              { routingThresholdPercent: current ?? percent, officialPattern: event.target.checked },
+              event.target.checked ? "Saved. New mocks follow the official question pattern." : "Saved. New mocks take one question per skill in turn.",
+            )
+          }
+          className="mt-0.5 h-4 w-4 accent-brand-500"
+        />
+        <span>
+          <span className="font-bold">Official question pattern</span>
+          <span className="mt-0.5 block text-slate-600">
+            Every mock module has the same make-up and order as the official SAT: Reading &amp; Writing from Words in Context to Rhetorical Synthesis with a fixed number of
+            each, Math with fixed counts per domain and typed answers in fixed places. Off: one question per skill in turn.
+          </span>
+        </span>
+      </label>
       {message && (
         <div className="mt-2">
           <Notice tone={message.tone}>{message.text}</Notice>

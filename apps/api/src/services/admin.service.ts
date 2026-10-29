@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { AssetModel, AttemptModel, FullTestModel, PaperModel, ProblemReportModel, QuestionModel, trusted, UserModel, type PaperDoc, type QuestionDoc } from "@satsharks/db";
+import { AssetModel, AttemptModel, contentKeyOf, FullTestModel, PaperModel, ProblemReportModel, QuestionModel, trusted, UserModel, type PaperDoc, type QuestionDoc } from "@satsharks/db";
 import {
   FULL_TEST_QUESTION_TAG,
   PAPER_STATUSES,
@@ -269,6 +269,14 @@ export const adminService = {
       set.assets = assetInput.map((asset) => ({ kind: "image", url: asset.url, maxWidth: asset.maxWidth, sourceUrl: sources.get(asset.url) ?? null }));
     }
 
+    // The fingerprint follows what students see, so an edited question stops matching its old twin.
+    set.contentKey = contentKeyOf({
+      prompt: (set.prompt as string | undefined) ?? question.prompt,
+      passage: set.passage !== undefined ? (set.passage as string | null) : question.passage,
+      choices: (set.choices as QuestionDoc["choices"] | undefined) ?? question.choices,
+      assets: (set.assets as QuestionDoc["assets"] | undefined) ?? question.assets,
+      viz: set.viz !== undefined ? set.viz : question.viz,
+    });
     await QuestionModel.updateOne({ _id: id }, { $set: set });
     invalidateCatalog();
     return this.getQuestion(id);
