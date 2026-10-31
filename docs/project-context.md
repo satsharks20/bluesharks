@@ -4,7 +4,7 @@
 what is half-done, and the traps already found. Keep it up to date: every session that changes the
 project adds to the change log at the bottom and corrects anything above that is no longer true.
 
-Last updated: 2026-10-30 (no repeats incl. top-up of exams without Math, official module pattern, Highlights & Notes, counts for premium only; fingerprints written to Atlas; code not committed. Earlier: security pass `1c8f2d3`, live).
+Last updated: 2026-10-31 (Analytics "Skills breakdown" with a Reading & Writing / Math selector; not committed. Earlier: no repeats incl. top-up of exams without Math, official module pattern, Highlights & Notes, counts for premium only, committed as `edfaeb0`; security pass `1c8f2d3`, live).
 
 ---
 
@@ -296,7 +296,10 @@ Last updated: 2026-10-30 (no repeats incl. top-up of exams without Math, officia
     closed a module, `m1TimedOut`/`timedOut`; trap — the wrong choice ≥40% of ≥5 students' wrong
     answers picked; topic not known — skill accuracy < 60%; otherwise careless); timing (average vs
     official pace 71 s / 95 s, pace chart of the latest timed test, slowest questions). Each part
-    ends with a next step and a button that starts the matching drill.
+    ends with a next step and a button that starts the matching drill. **Skills breakdown**
+    (2026-10-31; the client calls it "areas to improve"): a Reading & Writing / Math selector; each
+    section has its own list and next step (`Analytics.skillSteps`). Opens on the first listed
+    section, so a student with answers in one section never opens on an empty list.
   - **3.3** Daily goal (questions or minutes; suggested 20 + 10 × points-per-day still needed,
     15–80) from target score, predicted score and test date (own or next SAT date). Target score
     400–1600 in steps of 10; the boxes on Goals & streaks round and limit only when the student
@@ -311,7 +314,7 @@ Last updated: 2026-10-30 (no repeats incl. top-up of exams without Math, officia
     (7–10 pm local) and weekly progress (Monday 9–12 local), claimed in the DB so never sent twice;
     off without Resend or with `ENGAGEMENT_EMAILS=off`. Settings on Goals & streaks.
   - **Free vs paid** (proposal p.10): new Access feature **"Full analytics & mistake bank"**
-    (`analytics`). Locked: score only (no range/trend), top 3 weak areas, no error/timing analysis,
+    (`analytics`). Locked: score only (no range/trend), top 3 weak areas per section (since 2026-10-31), no error/timing analysis,
     last 20 mistakes. **Free until an admin saves Admin → Access**, like the others; a setting saved
     before this feature existed keeps its choices and reads analytics as free.
 
@@ -601,6 +604,7 @@ Web calls go to its own origin; `next.config.ts` rewrites `/api/*` to `API_URL`
 | 2026-10-19 | Pricing by region (Umair): a signed-in student sees only the plans of their account's country (PK → PKR, else USD), with no currency switch. Account country, not IP, for students (VPNs, students abroad; checkout charges the same currency). Visitors: Vercel IP country first, switch kept. Accounts without a country and staff keep the switch |
 | 2026-10-19 | A student who has not chosen a test date sees "The next SAT is in N days" / "Next SAT in N days" (the next date from Admin → SAT dates), never "Your test" |
 | 2026-10-30 | Client via Umair: no repeated questions (unseen first; when an exam runs out, **reuse the ones seen longest ago**, not block); the **official Bluebook module pattern** with exact counts (Claude to research; College Board practice tests used); **Bluebook-style Highlights & Notes**; exam question counts **for premium accounts only**. Umair allowed writing the fingerprint field to the live database and using a bluecorn token as needed |
+| 2026-10-31 | Client via Umair: areas to improve per section, with an option to choose Reading & Writing or Math. The card keeps the name **"Skills breakdown"** (Umair; do not rename it). Claude chose: the free plan shows 3 per section instead of 3 overall, and error patterns and timing stay for both sections together |
 | 2026-10-08 | An upload asks where it goes: Practice tests or Exams. A real SAT (e.g. December) goes to Exams. Umair chose "exam card + full test": it behaves like the other exams (drill, random mocks) and can also be taken whole as a fixed adaptive test |
 
 ## 7. Facts about the source (verified)
@@ -743,6 +747,12 @@ Web calls go to its own origin; `next.config.ts` rewrites `/api/*` to `API_URL`
 
 ## 9. Open items and suggestions
 
+0000. **Deploying the 2026-10-31 Skills breakdown change:** API (Railway) and web (Vercel) must go
+   live together: `skillsStep` became `skillSteps`, and `/analytics` breaks while one side is older.
+   Check Railway did not "Skip" or lag (§8). The default pricing row now says "Top 3 per section",
+   but the live saved pricing keeps its old text until edited in Admin → Settings. **132 uploaded
+   Math questions have no skill**, so they would be left out of the Skills breakdown once students
+   answer them (no such answers logged on 2026-10-31; the 162 uploaded R&W questions have skills).
 000. **Deploying the 2026-10-30 work:** API (Railway) and web (Vercel) together; the web's
    highlight save calls a new route. The API change is safe for the current web (new optional
    fields only). Fingerprints are already on Atlas (all 10,221). A test in progress at deploy time
@@ -1213,3 +1223,17 @@ Newest last. One entry per session or major step.
   without Math → Math 22 + 22), **28 e2e checks pass**; 5 browser checks (dialog explains, no error,
   Start enabled, full test starts, no console errors). Then the dialog's note was removed at the
   client's request (web type check only). Not committed.
+- **2026-10-31 — Areas to improve per section (client via Umair).** The client said the areas to
+  improve showed Math only. **Not so:** read-only Atlas counts (no names or ids read) found 4,485
+  answered R&W logs and 2,751 answered Math, all with a skill; of 30 students with logs, 26 have R&W
+  in the top 3 skills (16 only R&W) and 4 only Math (3 of them never touched R&W, the fourth answered
+  one R&W question). It read as Math because one list mixed both, with 19 Math skills to 10 R&W and
+  the section only in small grey text. The site has no "Areas to improve" wording; the client means
+  the "Skills breakdown" card on Analytics. Built the selector as in §2: `analytics.service.ts` (`skillStep`,
+  free view top 3 per section), `Analytics.skillSteps`, analytics page; pricing defaults reworded.
+  Checked: type check; 82 unit tests; **28 e2e checks** (week 3 check extended: each section's own
+  skills and next step, free view at most 3 per section); **17 browser checks** (e2e API on 4100 +
+  `.next-test` web on 3100, seeded in memory): each tab lists only its section, next step and drill
+  follow the tab, Math-only student opens on Math, empty tab explains itself, free view 3 per tab,
+  390px without sideways scroll, no console errors. Afterwards Umair asked to keep the old name:
+  the card and the default pricing row say "Skills breakdown" again (type check only). Not committed.

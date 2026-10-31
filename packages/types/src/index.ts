@@ -835,7 +835,7 @@ export const DEFAULT_PRICING: PricingContent = {
     { feature: "Drill questions", free: "20 per day", paid: "Unlimited" },
     { feature: "Question review with explanations", free: "Yes", paid: "Yes" },
     { feature: "Predicted SAT score", free: "Score only", paid: "Score, range and trend" },
-    { feature: "Skills breakdown", free: "Top 3 weak areas", paid: "All topics and skills" },
+    { feature: "Skills breakdown", free: "Top 3 per section", paid: "All topics and skills" },
     { feature: "Error pattern and timing analysis", free: "—", paid: "Yes" },
     { feature: "Mistake bank and retry queue", free: "Last 20 questions", paid: "Unlimited" },
     { feature: "Daily goals, streaks and leaderboard", free: "Yes", paid: "Yes" },
@@ -892,7 +892,7 @@ export const ACCESS_FEATURE_LABELS: Record<AccessFeature, { label: string; descr
   full_tests: { label: "Adaptive full tests", description: "Both sections and a break, drawn from the exam pool" },
   analytics: {
     label: "Full analytics & mistake bank",
-    description: "Score range and trend, every skill, error and timing analysis, every mistake. Locked: score only, top 3 weak areas, last 20 mistakes",
+    description: "Score range and trend, every skill, error and timing analysis, every mistake. Locked: score only, top 3 weak areas per section, last 20 mistakes",
   },
 };
 
@@ -1273,7 +1273,7 @@ export interface Analytics {
   prediction: ScorePrediction;
   predictionStep: NextStep;
   skills: SkillStat[];
-  skillsStep: NextStep;
+  skillSteps: Record<Section, NextStep>;
   // null when kept for paid plans.
   errors: { total: number; patterns: ErrorPatternStat[]; step: NextStep } | null;
   timing: {

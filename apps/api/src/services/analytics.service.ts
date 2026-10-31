@@ -221,6 +221,14 @@ async function timingAnalysis(userId: string, logs: QuestionLogDoc[]): Promise<N
   return { sections, pace, slowest, step };
 }
 
+// The next step for one section's skills breakdown: its costliest skill.
+function skillStep(skills: SkillStat[], section: Section): NextStep {
+  const top = skills.find((skill) => skill.section === section);
+  return top
+    ? { text: `Start with ${top.skill}: about ${top.pointsToGain} points to gain at ${Math.round(top.accuracy * 100)}% accuracy now.`, drill: drill(top.section, top.skill, `Practise ${top.skill}`) }
+    : { text: `Answer some ${SECTION_LABELS[section]} questions first: drills, mocks or a full test.`, drill: null };
+}
+
 // The free view's teaser (proposal "the results-page moment"): how many skills cost points and how
 // many points in all, never more than the distance to 1600. Real numbers; the skills stay hidden.
 const LOCKED_MIN_POINTS = 5;
@@ -241,7 +249,7 @@ export const analyticsService = {
     return prediction(await scoredSections(userId));
   },
 
-  // `full`: everything; otherwise the free view (score only, top weak areas, no errors or timing).
+  // `full`: everything; otherwise the free view (score only, top weak areas of each section, no errors or timing).
   async analytics(userId: string, full: boolean): Promise<Analytics> {
     const [sections, logs, shares, fullTests] = await Promise.all([
       scoredSections(userId),
@@ -266,17 +274,14 @@ export const analyticsService = {
         : top
           ? { text: `The fastest way up: ${top.skill} costs you about ${top.pointsToGain} points.`, drill: drill(top.section, top.skill, `Practise ${top.skill}`) }
           : { text: "Practise a few drills so we can see which skills cost you points.", drill: null };
-    const skillsStep: NextStep = top
-      ? { text: `Start with ${top.skill}: about ${top.pointsToGain} points to gain at ${Math.round(top.accuracy * 100)}% accuracy now.`, drill: drill(top.section, top.skill, `Practise ${top.skill}`) }
-      : { text: "Answer some questions first: drills, mocks or a full test.", drill: null };
 
     return {
       full,
       completedPapers: fullTests + standalone,
       prediction: full ? predicted : { ...predicted, low: null, high: null, trend: [] },
       predictionStep,
-      skills: full ? skills : skills.slice(0, FREE_ANALYTICS.weakAreas),
-      skillsStep,
+      skills: full ? skills : SECTIONS.flatMap((section) => skills.filter((skill) => skill.section === section).slice(0, FREE_ANALYTICS.weakAreas)),
+      skillSteps: { reading_writing: skillStep(skills, "reading_writing"), math: skillStep(skills, "math") },
       errors: full ? await errorAnalysis(userId, logs, skills) : null,
       timing: full ? await timingAnalysis(userId, logs) : null,
       locked: full ? null : lockedSummary(skills, predicted.total),

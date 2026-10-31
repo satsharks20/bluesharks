@@ -1,8 +1,9 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
-import { ERROR_PATTERN_LABELS, SECTION_LABELS, type Analytics, type NextStep } from "@satsharks/types";
+import { ERROR_PATTERN_LABELS, SECTION_LABELS, SECTIONS, type Analytics, type NextStep, type Section } from "@satsharks/types";
 import { ColumnChart, LineChart, Meter } from "@/components/charts";
 import { UnlockButton } from "@/components/plan-lock";
 import { Button, Card, Notice, PageHeader, Spinner } from "@/components/ui";
@@ -85,20 +86,39 @@ function Prediction({ data, drills }: { data: Analytics; drills: ReturnType<type
 }
 
 function Skills({ data, drills }: { data: Analytics; drills: ReturnType<typeof useStartDrill> }) {
+  // Starts on the first listed section, so a student with answers in only one never opens on an empty list.
+  const [section, setSection] = useState<Section>(data.skills[0]?.section ?? SECTIONS[0]);
+  const skills = data.skills.filter((skill) => skill.section === section);
+
   return (
     <Card>
       <h2 className="font-bold">Skills breakdown</h2>
       <p className="mt-1 text-sm text-slate-600">Sorted by the points each skill could add to a real test (an estimate from how often it appears and how often you miss it).</p>
-      {data.skills.length === 0 ? (
-        <p className="mt-4 text-sm text-slate-600">No answers yet.</p>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:inline-grid sm:grid-cols-[repeat(2,minmax(170px,auto))]">
+        {SECTIONS.map((entry) => (
+          <button
+            key={entry}
+            type="button"
+            aria-pressed={section === entry}
+            onClick={() => setSection(entry)}
+            className={`min-h-[42px] cursor-pointer rounded-[8px] border px-3 text-[13px] font-bold sm:text-sm ${
+              section === entry ? "border-brand-500 bg-brand-500 text-white" : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+            }`}
+          >
+            {SECTION_LABELS[entry]}
+          </button>
+        ))}
+      </div>
+      {skills.length === 0 ? (
+        <p className="mt-4 text-sm text-slate-600">No {SECTION_LABELS[section]} answers yet.</p>
       ) : (
         <ul className="mt-4 divide-y divide-slate-200">
-          {data.skills.map((skill) => (
+          {skills.map((skill) => (
             <li key={`${skill.section}-${skill.skill}`} className="grid gap-2 py-3 sm:grid-cols-[1fr_180px_90px] sm:items-center">
               <div className="min-w-0">
                 <p className="text-sm font-bold">{skill.skill}</p>
                 <p className="text-xs text-slate-500">
-                  {SECTION_LABELS[skill.section]} · {skill.topic} · {skill.correct}/{skill.answered} right
+                  {skill.topic} · {skill.correct}/{skill.answered} right
                 </p>
               </div>
               <div className="flex items-center gap-2">
@@ -110,8 +130,8 @@ function Skills({ data, drills }: { data: Analytics; drills: ReturnType<typeof u
           ))}
         </ul>
       )}
-      {!data.full && data.skills.length > 0 && <Locked what="The free plan shows your 3 weakest areas. Paid plans show every topic and skill." />}
-      <Step step={data.skillsStep} drills={drills} />
+      {!data.full && skills.length > 0 && <Locked what="The free plan shows your 3 weakest areas in each section. Paid plans show every topic and skill." />}
+      <Step step={data.skillSteps[section]} drills={drills} />
     </Card>
   );
 }

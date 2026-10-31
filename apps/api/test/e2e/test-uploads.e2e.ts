@@ -826,8 +826,14 @@ async function run() {
     assert.equal(analytics.completedPapers, 3);
     assert.ok(analytics.skills.some((stat: { skill: string }) => stat.skill === "Linear functions"));
     assert.ok(analytics.errors.patterns.find((pattern: { pattern: string }) => pattern.pattern === "changed_answer").count >= 1);
-    assert.ok(analytics.skillsStep.drill.skills.length === 1);
-    const history = (await me.call("GET", "/api/student/history/tests")).json.data.tests;
+    // Skills breakdown: each section has its own skills and its own next step.
+    for (const name of ["reading_writing", "math"]) {
+      const own = analytics.skills.filter((stat: { section: string }) => stat.section === name);
+      assert.ok(own.length > 0, name);
+      assert.equal(analytics.skillSteps[name].drill.section, name);
+      assert.deepEqual(analytics.skillSteps[name].drill.skills, [own[0].skill]);
+    }
+    const history =(await me.call("GET", "/api/student/history/tests")).json.data.tests;
     assert.deepEqual(
       history.map((test: { score: number; change: number | null }) => [test.score, test.change]),
       [
@@ -873,14 +879,17 @@ async function run() {
     await me.call("PATCH", "/api/student/engagement", { showOnLeaderboard: false });
     assert.ok(!(await friend.call("GET", "/api/student/leaderboard?scope=global&period=all")).json.data.rows.some((row: { name: string }) => row.name === "Week Three Student"));
 
-    // Free accounts with analytics kept for paid plans: score only, top 3, last 20 mistakes.
+    // Free accounts with analytics kept for paid plans: score only, top 3 of each section, last 20 mistakes.
     assert.equal((await admin.call("PUT", "/api/admin/settings/access", { ...open, features: { ...open.features, analytics: "paid" } })).status, 200);
     analytics = (await me.call("GET", "/api/student/analytics")).json.data;
     assert.equal(analytics.full, false);
     assert.equal(analytics.prediction.total, 1250);
     assert.equal(analytics.prediction.low, null);
     assert.deepEqual(analytics.prediction.trend, []);
-    assert.ok(analytics.skills.length <= 3);
+    for (const name of ["reading_writing", "math"]) {
+      const own = analytics.skills.filter((stat: { section: string }) => stat.section === name);
+      assert.ok(own.length > 0 && own.length <= 3, name);
+    }
     assert.equal(analytics.errors, null);
     assert.equal(analytics.timing, null);
     bank = (await me.call("GET", "/api/student/mistakes")).json.data;
