@@ -1,28 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
 import { homePath, isStaffUser, useMe } from "@/lib/auth";
 import { ExitOffer } from "@/components/exit-offer";
 import { StudentProof } from "@/components/student-proof";
 import { Notice, Spinner } from "@/components/ui";
 import { usePricing, type Currency } from "@/lib/pricing";
 
-// Signed-in students see only their own region's plans (from the country they chose at sign-up,
-// which is also the currency checkout charges): no switch, so a Pakistani student never sees USD
-// prices and an international student never sees PKR. Visitors get the currency of the country they
-// are browsing from (Vercel's IP country, passed in by the page) or a guess from their device's time
-// zone, and keep the switch (a VPN or a phone network can put them in the wrong country). Accounts
-// without a country, and staff, keep the switch too.
-function guessCurrency(): Currency {
-  try {
-    return Intl.DateTimeFormat().resolvedOptions().timeZone === "Asia/Karachi"
-      ? "PKR"
-      : "USD";
-  } catch {
-    return "USD";
-  }
-}
+// The server page supplies the currency derived from the current public IP. There is deliberately
+// no account override or browser switch: checkout independently enforces the same IP rule.
 
 function Check() {
   return (
@@ -38,25 +24,13 @@ function Check() {
 }
 
 export function PricingPlans({
-  initialCurrency = null,
+  initialCurrency = "USD",
 }: {
-  initialCurrency?: Currency | null;
+  initialCurrency?: Currency;
 }) {
   const { data: user } = useMe();
   const pricing = usePricing();
-  const [chosen, setChosen] = useState<Currency | null>(null);
-  const [guess, setGuess] = useState<Currency>("PKR");
-  useEffect(() => setGuess(guessCurrency()), []);
-  const fromAccount: Currency | null = user?.region
-    ? user.region === "local"
-      ? "PKR"
-      : "USD"
-    : null;
-  // A student's country decides; nothing on the page can change it.
-  const fixedByAccount = user?.role === "student" && fromAccount !== null;
-  const currency = fixedByAccount
-    ? fromAccount!
-    : (chosen ?? fromAccount ?? initialCurrency ?? guess);
+  const currency = initialCurrency;
   const checkoutHref = (planId: string) => `/checkout?plan=${planId}`;
 
   if (pricing.isLoading) return <Spinner label="Loading plans" />;
@@ -71,45 +45,10 @@ export function PricingPlans({
 
   return (
     <>
-      {fixedByAccount ? (
-        <p className="text-center text-sm font-medium text-slate-600">
-          {currency === "PKR"
-            ? "Prices in PKR for students in Pakistan"
-            : "Prices in USD for international students"}
-          , from the country on your account.
-        </p>
-      ) : (
-        <div className="flex flex-col items-center gap-2">
-          <div
-            role="radiogroup"
-            aria-label="Currency"
-            className="inline-flex rounded-full border border-slate-900 bg-white p-1"
-          >
-            {(
-              [
-                { id: "PKR", label: "Pakistan · PKR" },
-                { id: "USD", label: "International · USD" },
-              ] as const
-            ).map((option) => (
-              <button
-                key={option.id}
-                type="button"
-                role="radio"
-                aria-checked={currency === option.id}
-                onClick={() => setChosen(option.id)}
-                className={`min-h-10 cursor-pointer rounded-full px-4 text-sm font-bold transition sm:px-5 ${currency === option.id ? "bg-brand-500 text-white" : "text-slate-700 hover:bg-slate-100"}`}
-              >
-                {option.label}
-              </button>
-            ))}
-          </div>
-          {fromAccount && !chosen && (
-            <p className="text-xs text-slate-500">
-              Showing prices for your account&apos;s region.
-            </p>
-          )}
-        </div>
-      )}
+      <p className="text-center text-sm font-medium text-slate-600">
+        {currency === "PKR" ? "Prices in PKR for your current location in Pakistan." : "Prices in USD for your current location outside Pakistan."} Currency is verified again at
+        checkout.
+      </p>
 
       <div className="mx-auto mt-8 grid max-w-6xl gap-4 lg:grid-cols-3">
         {plans.map((plan) => {

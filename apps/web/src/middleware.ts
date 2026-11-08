@@ -6,6 +6,7 @@ import { NextResponse, type NextRequest } from "next/server";
 // Without PROXY_SECRET (local development) requests pass through unchanged.
 
 const CLIENT_IP_HEADER = "x-satsharks-client-ip";
+const CLIENT_COUNTRY_HEADER = "x-satsharks-client-country";
 const PROXY_SECRET_HEADER = "x-satsharks-proxy-secret";
 
 export function middleware(request: NextRequest) {
@@ -17,6 +18,9 @@ export function middleware(request: NextRequest) {
   const ip = request.headers.get("x-real-ip") ?? request.headers.get("x-forwarded-for")?.split(",")[0]?.trim();
   if (ip) headers.set(CLIENT_IP_HEADER, ip);
   else headers.delete(CLIENT_IP_HEADER);
+  const country = request.headers.get("x-vercel-ip-country")?.trim().toUpperCase();
+  if (country && /^[A-Z]{2}$/.test(country)) headers.set(CLIENT_COUNTRY_HEADER, country);
+  else headers.delete(CLIENT_COUNTRY_HEADER);
   headers.set(PROXY_SECRET_HEADER, secret);
   return NextResponse.next({ request: { headers } });
 }

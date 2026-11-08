@@ -21,6 +21,11 @@ import {
   setPaperSchedule,
   reopenReport,
   resolveReport,
+  resolveReports,
+  listAdminLeaderboard,
+  exportAdminLeaderboard,
+  setLeaderboardVisibility,
+  resetLeaderboardWeek,
   setAccess,
   setAdaptiveSettings,
   setConversionTables,
@@ -101,9 +106,15 @@ adminRouter.put("/settings/payments", requirePermission("payments:write"), setPa
 adminRouter.patch("/users/:id", requirePermission("users:write"), updateUser);
 
 adminRouter.get("/reports", requirePermission("reports:read"), listReports);
+adminRouter.post("/reports/resolve", requirePermission("reports:write"), resolveReports);
 adminRouter.get("/reports/:id", requirePermission("reports:read"), getReport);
 adminRouter.post("/reports/:id/resolve", requirePermission("reports:write"), resolveReport);
 adminRouter.post("/reports/:id/reopen", requirePermission("reports:write"), reopenReport);
+
+adminRouter.get("/leaderboard", requirePermission("users:read"), listAdminLeaderboard);
+adminRouter.get("/leaderboard/export", requirePermission("users:read"), exportAdminLeaderboard);
+adminRouter.patch("/leaderboard/:id/visibility", requirePermission("users:write"), setLeaderboardVisibility);
+adminRouter.post("/leaderboard/:id/reset-week", requirePermission("users:write"), resetLeaderboardWeek);
 
 adminRouter.get("/papers", requirePermission("papers:read"), listPapers);
 adminRouter.post("/papers/status", requirePermission("papers:write"), setPapersStatus);

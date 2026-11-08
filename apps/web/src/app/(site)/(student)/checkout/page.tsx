@@ -185,7 +185,7 @@ function CheckoutView() {
         </ul>
         {pricing.data?.tagline && <p className="mt-4 text-xs font-medium text-slate-600">{pricing.data.tagline}</p>}
         <p className="mt-2 text-xs text-slate-500">
-          Prices in {data.currency}, from the country on your account. Nothing is charged automatically; renewing is your choice. {pricing.data?.refundPolicy}
+          Prices in {data.currency}, based on your current IP location and verified again when you pay. Nothing is charged automatically; renewing is your choice. {pricing.data?.refundPolicy}
         </p>
         <Link href="/pricing" className="mt-4 inline-block text-sm font-bold text-brand-500 hover:underline">
           ← Change plan

@@ -33,8 +33,8 @@ export function roleHasPermission(role: UserRole, permission: Permission): boole
   return ROLE_PERMISSIONS[role].includes(permission);
 }
 
-// Local = Pakistan (PKR plans), International = everywhere else (USD plans). Decided only by the
-// country the student picks at sign-up, never by IP address.
+// Account region is still derived from the country picked at sign-up (for admin filters and local
+// content). Purchase currency is separate and follows the current request IP.
 export const USER_REGIONS = ["local", "international"] as const;
 export type UserRegion = (typeof USER_REGIONS)[number];
 
@@ -782,6 +782,12 @@ export function looseMathWarning(text: string): boolean {
 export const CURRENCIES = ["PKR", "USD"] as const;
 export type Currency = (typeof CURRENCIES)[number];
 
+// Pricing and checkout use the requester's public-IP country. Unknown locations default to the
+// international price; production checkout refuses an unverified location before calling this.
+export function currencyForIpCountry(country: string | null | undefined): Currency {
+  return country?.trim().toUpperCase() === LOCAL_COUNTRY_CODE ? "PKR" : "USD";
+}
+
 // The three plans are fixed (accounts store which one they have); their wording and prices are not.
 export const PRICING_PLAN_IDS = ["free", ...PAID_PLANS] as const;
 export type PricingPlanId = (typeof PRICING_PLAN_IDS)[number];
@@ -1044,6 +1050,31 @@ export interface AdminReport {
   history: ReportHistoryEntry[];
   createdAt: string;
   resolvedAt: string | null;
+}
+
+export interface AdminLeaderboardRow {
+  id: string;
+  rank: number;
+  name: string;
+  email: string;
+  country: string | null;
+  plan: UserPlan;
+  points: number;
+  questions: number;
+  accuracy: number | null;
+  streak: number;
+  lastActiveAt: string | null;
+  showOnLeaderboard: boolean;
+  fastAnswers: number;
+  fastAnswerRate: number;
+  veryFastAnswers: boolean;
+}
+
+export interface AdminLeaderboard {
+  rows: AdminLeaderboardRow[];
+  total: number;
+  page: number;
+  pageSize: number;
 }
 
 // ---------- admin question bank ----------

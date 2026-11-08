@@ -20,6 +20,7 @@ import type { CreateReportInput } from "@satsharks/validation";
 import mongoose from "mongoose";
 import { AppError } from "../utils/app-error";
 import { adminService } from "./admin.service";
+import { emailService } from "./email.service";
 import { practiceService } from "./practice.service";
 
 // Beyond the hourly rate limit, a ceiling on what one student can have waiting at once.
@@ -87,6 +88,67 @@ async function withRelated(reports: ProblemReportDoc[]): Promise<AdminReport[]> 
     .select("title")
     .lean<PaperDoc[]>();
   return toAdminReports(reports, { questions, papers, users, attempts });
+}
+
+async function tellStudents(userIds: string[]): Promise<void> {
+  const counts = new Map<string, number>();
+  for (const id of userIds) counts.set(id, (counts.get(id) ?? 0) + 1);
+  const users = await UserModel.find({ _id: trusted({ $in: [...counts.keys()] }), status: trusted({ $ne: "deleted" }) })
+    .select("name email")
+    .lean<UserDoc[]>();
+  await Promise.all(
+    users.map((user) => {
+      const count = counts.get(String(user._id)) ?? 1;
+      return emailService.sendNotice(user.email, {
+        subject: count === 1 ? "Your problem report was handled" : "Your problem reports were handled",
+        greeting: `Hi ${user.name},`,
+        lines: [
+          count === 1
+            ? "The problem report you sent about a practice question has been reviewed and handled."
+            : `${count} problem reports you sent about practice questions have been reviewed and handled.`,
+          "Thank you for helping us improve LUE SAT.",
+        ],
+      });
+    }),
+  );
+}
+
+async function resolveTargets(targets: ProblemReportDoc[], adminId: string, note: string, notify: boolean): Promise<number> {
+  const questionIds = [...new Set(targets.map((target) => String(target.questionId)))];
+  const questions = await QuestionModel.find({ _id: trusted({ $in: questionIds }) })
+    .select("updatedAt")
+    .lean<(QuestionDoc & { updatedAt: Date })[]>();
+  const updated = new Map(questions.map((question) => [String(question._id), question.updatedAt]));
+  const now = new Date();
+  const resolvedUserIds: string[] = [];
+
+  // A bounded batch keeps a large "resolve all" request from opening thousands of database
+  // operations at once, while each status check still makes concurrent admins safe.
+  for (let offset = 0; offset < targets.length; offset += 50) {
+    const batch = targets.slice(offset, offset + 50);
+    const results = await Promise.all(
+      batch.map((target) => {
+        const event: ReportEvent = {
+          action: "resolved",
+          at: now,
+          by: new mongoose.Types.ObjectId(adminId),
+          note: note || null,
+          questionEdited: (updated.get(String(target.questionId))?.getTime() ?? 0) > target.createdAt.getTime(),
+        };
+        return ProblemReportModel.findOneAndUpdate(
+          { _id: target._id, status: "pending" },
+          { $set: { status: "resolved", resolvedAt: now, resolvedBy: event.by }, $push: { history: event } },
+          { new: true },
+        )
+          .select("userId")
+          .lean<ProblemReportDoc | null>();
+      }),
+    );
+    for (const result of results) if (result) resolvedUserIds.push(String(result.userId));
+  }
+
+  if (notify && resolvedUserIds.length > 0) await tellStudents(resolvedUserIds);
+  return resolvedUserIds.length;
 }
 
 export const reportService = {
@@ -162,34 +224,28 @@ export const reportService = {
 
   // Pending → resolved. The status check is part of the write, so a double click (or two admins at
   // once) resolves it once and the second request is told it was already done.
-  async resolve(id: string, adminId: string, input: { note: string; includeSameQuestion: boolean }): Promise<{ resolved: number }> {
+  async resolve(id: string, adminId: string, input: { note: string; includeSameQuestion: boolean; notify: boolean }): Promise<{ resolved: number }> {
     const report = await ProblemReportModel.findById(id).lean<ProblemReportDoc>();
     if (!report) throw AppError.notFound("Report not found");
     if (report.status !== "pending") throw AppError.conflict("This report has already been resolved");
 
-    const question = await QuestionModel.findById(report.questionId).select("updatedAt").lean<QuestionDoc & { updatedAt: Date }>();
-    const now = new Date();
     const targets = input.includeSameQuestion
-      ? await ProblemReportModel.find({ questionId: report.questionId, status: "pending" }).select("_id createdAt").lean<ProblemReportDoc[]>()
+      ? await ProblemReportModel.find({ questionId: report.questionId, status: "pending" }).lean<ProblemReportDoc[]>()
       : [report];
-
-    let resolved = 0;
-    for (const target of targets) {
-      const event: ReportEvent = {
-        action: "resolved",
-        at: now,
-        by: new mongoose.Types.ObjectId(adminId),
-        note: input.note || null,
-        // Recorded so the history shows whether the fix was a change to the question.
-        questionEdited: question ? question.updatedAt.getTime() > target.createdAt.getTime() : false,
-      };
-      const result = await ProblemReportModel.updateOne(
-        { _id: target._id, status: "pending" },
-        { $set: { status: "resolved", resolvedAt: now, resolvedBy: event.by }, $push: { history: event } },
-      );
-      resolved += result.modifiedCount;
-    }
+    const resolved = await resolveTargets(targets, adminId, input.note, input.notify);
     if (resolved === 0) throw AppError.conflict("This report has already been resolved");
+    return { resolved };
+  },
+
+  async resolveMany(
+    adminId: string,
+    input: { ids?: string[]; allPending?: boolean; note: string; notify: boolean },
+  ): Promise<{ resolved: number }> {
+    const filter = input.allPending ? { status: "pending" } : { _id: trusted({ $in: input.ids ?? [] }), status: "pending" };
+    const targets = await ProblemReportModel.find(filter).sort({ createdAt: 1 }).lean<ProblemReportDoc[]>();
+    if (targets.length === 0) throw AppError.conflict("The selected reports have already been resolved");
+    const resolved = await resolveTargets(targets, adminId, input.note, input.notify);
+    if (resolved === 0) throw AppError.conflict("The selected reports have already been resolved");
     return { resolved };
   },
 

@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PRICING_ALTERNATES, PricingPage } from "@/components/pricing-page";
+import { pricingCopy, requestPricingCurrency } from "@/lib/request-pricing";
 
 export const metadata: Metadata = {
   title: "SAT prep prices for international students (USD)",
@@ -8,13 +9,15 @@ export const metadata: Metadata = {
   openGraph: { title: "LUE SAT prices for international students (USD)", url: "/pricing/international" },
 };
 
-export default function PricingInternational() {
+export default async function PricingInternational() {
+  const currency = await requestPricingCurrency();
+  const copy = pricingCopy(currency);
   return (
     <PricingPage
-      currency="USD"
+      currency={currency}
       path="/pricing/international"
-      title="SAT prep prices for international students"
-      subtitle="Plans in US dollars for students everywhere outside Pakistan. Start free with two full past papers."
+      title={copy.title}
+      subtitle={copy.subtitle}
     />
   );
 }

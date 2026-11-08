@@ -5,6 +5,7 @@ import { env } from "../config/env";
 
 // Set by the web app's middleware (apps/web/src/middleware.ts); the names must match there.
 export const CLIENT_IP_HEADER = "x-satsharks-client-ip";
+export const CLIENT_COUNTRY_HEADER = "x-satsharks-client-country";
 export const PROXY_SECRET_HEADER = "x-satsharks-proxy-secret";
 
 // Hashing first makes both sides the same length, as timingSafeEqual requires.
@@ -21,4 +22,13 @@ export function clientIp(req: Request): string {
   const secret = env.PROXY_SECRET;
   if (secret && forwarded && isIP(forwarded) && sameSecret(req.get(PROXY_SECRET_HEADER) ?? "", secret)) return forwarded;
   return req.ip ?? "unknown";
+}
+
+// Vercel derives this ISO country code from the same public IP and the web middleware signs the
+// forwarded value with PROXY_SECRET. A browser or direct Railway caller cannot choose a country.
+export function clientCountry(req: Request): string | null {
+  const secret = env.PROXY_SECRET;
+  const country = req.get(CLIENT_COUNTRY_HEADER)?.trim().toUpperCase();
+  if (!secret || !country || !/^[A-Z]{2}$/.test(country)) return null;
+  return sameSecret(req.get(PROXY_SECRET_HEADER) ?? "", secret) ? country : null;
 }

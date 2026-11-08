@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { PRICING_ALTERNATES, PricingPage } from "@/components/pricing-page";
+import { requestPricingCurrency } from "@/lib/request-pricing";
 
 export const metadata: Metadata = {
   title: "Pricing",
@@ -9,11 +9,9 @@ export const metadata: Metadata = {
   openGraph: { title: "LUE SAT pricing", description: "Plans in PKR for Pakistan and USD worldwide. Start free.", url: "/pricing" },
 };
 
-// The currency of the country the visitor browses from (Vercel's IP country header); students who
-// are signed in see their account's currency instead, and the switch on the page always works.
+// The current public IP decides for visitors and signed-in students alike.
 export default async function Pricing() {
-  const country = (await headers()).get("x-vercel-ip-country");
-  const currency = country ? (country.toUpperCase() === "PK" ? "PKR" : "USD") : null;
+  const currency = await requestPricingCurrency();
   return (
     <PricingPage
       currency={currency}

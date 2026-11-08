@@ -4,7 +4,7 @@
 what is half-done, and the traps already found. Keep it up to date: every session that changes the
 project adds to the change log at the bottom and corrects anything above that is no longer true.
 
-Last updated: 2026-11-05 (LUE SAT rebrand and top-20 leaderboard completed; Next.js development output isolated from production builds after a local Webpack chunk-map failure. No live data writes.)
+Last updated: 2026-11-08 (pricing display and purchase quotes now follow the current public-IP country; admin leaderboard and bulk report resolution added. No live data writes.)
 
 ---
 
@@ -53,7 +53,8 @@ Last updated: 2026-11-05 (LUE SAT rebrand and top-20 leaderboard completed; Next
   Passwords were given to Umair only; not stored anywhere in the repo. Reports filed by a hidden
   student still show its name/email in the report queue.
 - **Country at sign-up** (required, ISO code): `PK` → `region: local`, anything else →
-  `international`. Never from IP. Accounts made before this have `country`/`region` null; such a
+  `international`. This remains the account country for leaderboard/admin filtering, but no longer
+  controls pricing or checkout; purchase currency follows the current public IP. Accounts made before this have `country`/`region` null; such a
   student adds it **once** on Leaderboard → My country (`PUT /api/student/country`, 409 when a
   country is already set; it also sets the region). On 2026-10-16 one live student had none.
 - **Clear deleted accounts (2026-10-16):** Admin → Users → Deleted tab → "Delete all permanently"
@@ -321,8 +322,8 @@ Last updated: 2026-11-05 (LUE SAT rebrand and top-20 leaderboard completed; Next
 
 - **Week 4 (proposal 4.1–4.4, 2026-10-19).**
   - **Payments** (`payment.service.ts`, `payment-rules.ts`, `payment-gateways.ts`, collection
-    `payments`, `PaymentModel`). Students buy on `/checkout?plan=` (student panel) in their
-    account's currency (PK → PKR, else USD; the pricing switch is display only). Amount = the price
+    `payments`, `PaymentModel`). Students buy on `/checkout?plan=` (student panel) in the currency
+    derived from their current public-IP country (Pakistan → PKR, every other country → USD). Amount = the price
     typed in Admin → Settings → Pricing, parsed (`parsePrice`). Ways to pay: **bank transfer,
     JazzCash, Easypaisa** (Admin → Settings → Payments: on/off, account details, currencies) — the
     student sends a transaction ID, status `review`, an admin approves (plan given, receipt email) or
@@ -373,9 +374,10 @@ Last updated: 2026-11-05 (LUE SAT rebrand and top-20 leaderboard completed; Next
     public pages, `sitemap.ts`, `robots.ts` (private paths closed, AI crawlers named and allowed),
     `/llms.txt`, JSON-LD (Organization, WebSite, Course, FAQPage on `/` and `/faq`, Product offers on
     pricing, Article + breadcrumbs on guides), **guides** `/guides` + 4 guides (`lib/guides.ts`),
-    `/pricing/pakistan` (PKR) and `/pricing/international` (USD) with hreflang; `/pricing` picks the
-    currency from Vercel's `x-vercel-ip-country` for visitors. Signed-in students see only their
-    account region's prices on every pricing page, with no switch (§6, 2026-10-19). GA4 when `NEXT_PUBLIC_GA_ID` is set; Search
+    `/pricing/pakistan` and `/pricing/international` with hreflang; every pricing route picks PKR for
+    a Pakistan public IP and USD for every other IP, for visitors and signed-in students, with no switch.
+    The web middleware forwards Vercel's IP country to checkout with `PROXY_SECRET`; the API recomputes
+    every quote/payment from that trusted value and rejects deployed checkout without it. GA4 when `NEXT_PUBLIC_GA_ID` is set; Search
     Console tag from `NEXT_PUBLIC_GOOGLE_SITE_VERIFICATION`. **Refund page** `/refund` (reads the
     refund line from pricing); Terms "Plans and payments" rewritten for the real flow.
   - **4.4**: `docs/admin-guide.md` (for SAT Sharks' admins), `docs/launch-checklist.md`, load test
@@ -616,6 +618,7 @@ Web calls go to its own origin; `next.config.ts` rewrites `/api/*` to `API_URL`
 | 2026-10-12 | Stop account sharing (client request): a student account is used on one device at a time. Umair chose "new login kicks out the old device" (not a hard lock to the first device, not "logout frees it"), for all students, free and paid; staff/admins exempt |
 | 2026-10-12 | Two hidden developer accounts (one admin with the same access as `admin2.0@gmail.com`, one paid student), not in the Users list or any count |
 | 2026-10-19 | Pricing by region (Umair): a signed-in student sees only the plans of their account's country (PK → PKR, else USD), with no currency switch. Account country, not IP, for students (VPNs, students abroad; checkout charges the same currency). Visitors: Vercel IP country first, switch kept. Accounts without a country and staff keep the switch |
+| 2026-11-08 | Client changed pricing policy: current public IP overrides account country for everyone. Pakistan IP → PKR; every other IP → USD; no currency switch. Checkout/payment must independently enforce the trusted IP country, including VPN changes. This supersedes the 2026-10-19 pricing decision. |
 | 2026-10-19 | A student who has not chosen a test date sees "The next SAT is in N days" / "Next SAT in N days" (the next date from Admin → SAT dates), never "Your test" |
 | 2026-10-30 | Client via Umair: no repeated questions (unseen first; when an exam runs out, **reuse the ones seen longest ago**, not block); the **official Bluebook module pattern** with exact counts (Claude to research; College Board practice tests used); **Bluebook-style Highlights & Notes**; exam question counts **for premium accounts only**. Umair allowed writing the fingerprint field to the live database and using a bluecorn token as needed |
 | 2026-10-31 | Client via Umair: areas to improve per section, with an option to choose Reading & Writing or Math. The card keeps the name **"Skills breakdown"** (Umair; do not rename it). Claude chose: the free plan shows 3 per section instead of 3 overall, and error patterns and timing stay for both sections together |
@@ -1275,3 +1278,14 @@ Newest last. One entry per session or major step.
   route types are included by TypeScript. Restarted only the local web server. Checked: web typecheck;
   50-route production build while dev stayed running; homepage and all 9 dev chunks still returned 200
   after that build. No API, database, question-bank or user data was changed.
+- **2026-11-08 — Admin operations and IP-based pricing (client via Umair).** Added Admin →
+  Leaderboard with week/all-time details, filters, hidden students, fast-answer flags, CSV export,
+  visibility control and weekly point resets; added bulk report resolution with shared notes and
+  optional student emails. Pricing policy then changed from account country to the current public
+  IP: all pricing routes have no currency switch and render PKR only for Pakistan IPs, USD otherwise.
+  `middleware.ts` forwards Vercel's ISO IP country beside the existing client IP, signed with
+  `PROXY_SECRET`; checkout, manual payment and card-payment quotes enforce that trusted country and
+  reject a stale displayed currency after a VPN/location change. Direct deployed API calls without
+  the signed country are refused; local development without `PROXY_SECRET` fails closed to USD, so
+  PKR is never shown or charged unless Pakistan was positively identified. No live database or
+  settings writes.

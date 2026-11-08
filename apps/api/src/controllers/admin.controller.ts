@@ -2,6 +2,8 @@ import type { Request, Response } from "express";
 import {
   accessSettingsSchema,
   adaptiveSettingsSchema,
+  adminLeaderboardQuerySchema,
+  bulkResolveReportsSchema,
   bulkPaperStatusSchema,
   bulkUsersSchema,
   conversionTablesSchema,
@@ -16,6 +18,7 @@ import {
   scheduleSchema,
   updateUserSchema,
   userListQuerySchema,
+  leaderboardVisibilitySchema,
   type UpdateQuestionInput,
 } from "@satsharks/validation";
 import type { AccessItem, AdminAccess, PricingContent } from "@satsharks/types";
@@ -25,6 +28,7 @@ import { testUploadService } from "../services/test-upload.service";
 import { reportService } from "../services/report.service";
 import { userAdminService } from "../services/user-admin.service";
 import { settingsService } from "../services/settings.service";
+import { adminLeaderboardService } from "../services/admin-leaderboard.service";
 import { AppError } from "../utils/app-error";
 import { sendOk } from "../utils/respond";
 
@@ -142,6 +146,10 @@ export async function resolveReport(req: Request, res: Response): Promise<void> 
   sendOk(res, await reportService.resolve(objectIdSchema.parse(req.params.id), String(req.user!._id), input));
 }
 
+export async function resolveReports(req: Request, res: Response): Promise<void> {
+  sendOk(res, await reportService.resolveMany(String(req.user!._id), bulkResolveReportsSchema.parse(req.body)));
+}
+
 export async function reopenReport(req: Request, res: Response): Promise<void> {
   const { note } = reopenReportSchema.parse(req.body);
   await reportService.reopen(objectIdSchema.parse(req.params.id), String(req.user!._id), note);
@@ -171,6 +179,28 @@ export async function exportUsers(req: Request, res: Response): Promise<void> {
   res.setHeader("Content-Disposition", `attachment; filename="lue-sat-users-${new Date().toISOString().slice(0, 10)}.csv"`);
   res.setHeader("Cache-Control", "no-store");
   res.send(csv);
+}
+
+export async function listAdminLeaderboard(req: Request, res: Response): Promise<void> {
+  sendOk(res, await adminLeaderboardService.list(adminLeaderboardQuerySchema.parse(req.query)));
+}
+
+export async function exportAdminLeaderboard(req: Request, res: Response): Promise<void> {
+  const query = adminLeaderboardQuerySchema.parse({ ...req.query, page: 1, pageSize: 100 });
+  const csv = await adminLeaderboardService.exportCsv(query);
+  res.setHeader("Content-Type", "text/csv; charset=utf-8");
+  res.setHeader("Content-Disposition", `attachment; filename="lue-sat-leaderboard-${query.period}-${new Date().toISOString().slice(0, 10)}.csv"`);
+  res.setHeader("Cache-Control", "no-store");
+  res.send(csv);
+}
+
+export async function setLeaderboardVisibility(req: Request, res: Response): Promise<void> {
+  const { shown } = leaderboardVisibilitySchema.parse(req.body);
+  sendOk(res, await adminLeaderboardService.setVisibility(objectIdSchema.parse(req.params.id), shown));
+}
+
+export async function resetLeaderboardWeek(req: Request, res: Response): Promise<void> {
+  sendOk(res, await adminLeaderboardService.resetWeek(objectIdSchema.parse(req.params.id)));
 }
 
 export async function setPaperSchedule(req: Request, res: Response): Promise<void> {

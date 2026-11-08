@@ -285,9 +285,31 @@ export const resolveReportSchema = z.object({
   note: z.string().trim().max(1000).default(""),
   // Also close every other pending report about the same question.
   includeSameQuestion: z.boolean().default(false),
+  notify: z.boolean().default(false),
 });
 
+export const bulkResolveReportsSchema = z
+  .object({
+    ids: z.array(objectIdSchema).min(1).max(500).optional(),
+    allPending: z.boolean().optional(),
+    note: z.string().trim().max(1000).default(""),
+    notify: z.boolean().default(false),
+  })
+  .refine((value) => Boolean(value.allPending) !== Boolean(value.ids), "Choose selected reports or all pending reports");
+
 export const reopenReportSchema = z.object({ note: z.string().trim().max(1000).default("") });
+
+export const adminLeaderboardQuerySchema = z.object({
+  period: z.enum(LEADERBOARD_PERIODS).default("week"),
+  country: z.preprocess((value) => (value === "" ? undefined : value), countryCodeSchema.optional()),
+  plan: z.preprocess((value) => (value === "" ? undefined : value), z.enum(USER_PLANS).optional()),
+  search: z.preprocess((value) => (value === "" ? undefined : value), z.string().trim().max(100).optional()),
+  page: z.coerce.number().int().min(1).max(100000).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(25),
+});
+export type AdminLeaderboardQuery = z.infer<typeof adminLeaderboardQuerySchema>;
+
+export const leaderboardVisibilitySchema = z.object({ shown: z.boolean() });
 
 // ---------- admin ----------
 

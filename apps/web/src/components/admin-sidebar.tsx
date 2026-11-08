@@ -21,6 +21,7 @@ interface Section {
 const SECTIONS: Section[] = [
   { href: "/admin", label: "Dashboard", permission: "admin:access", icon: <path d="M4 13h6V4H4v9zm0 7h6v-5H4v5zm10 0h6v-9h-6v9zm0-16v5h6V4h-6z" /> },
   { href: "/admin/users", label: "Users", permission: "users:read", icon: <path d="M16 19v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 10a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7zM22 19v-1a4 4 0 0 0-3-3.9M16 3.1a3.5 3.5 0 0 1 0 6.8" /> },
+  { href: "/admin/leaderboard", label: "Leaderboard", permission: "users:read", icon: <path d="M8 21h8M12 17v4M7 4h10v5a5 5 0 0 1-10 0V4zM7 6H4v2a3 3 0 0 0 3 3M17 6h3v2a3 3 0 0 1-3 3" /> },
   { href: "/admin/payments", label: "Payments", permission: "payments:read", icon: <path d="M3 7h18v12H3V7zm0 4h18M7 15h3M3 7l2-3h14l2 3" />, badge: "newPayments" },
   { href: "/admin/papers", label: "Papers", permission: "papers:read", icon: <path d="M7 3h7l5 5v13H7V3zm7 0v5h5M10 13h6M10 17h6" /> },
   { href: "/admin/tests", label: "Full tests", permission: "papers:read", icon: <path d="M9 4h6m-6 0a2 2 0 0 0-2 2v0h10v0a2 2 0 0 0-2-2M9 4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1M7 6H5v15h14V6h-2M9 12l2 2 4-4M9 17h6" /> },

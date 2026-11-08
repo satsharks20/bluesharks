@@ -12,18 +12,31 @@ import {
   redeemInviteSchema,
 } from "@satsharks/validation";
 import { UserModel } from "@satsharks/db";
-import { contentRule, type PaymentSettings } from "@satsharks/types";
+import { contentRule, currencyForIpCountry, type Currency, type PaymentSettings } from "@satsharks/types";
+import { env } from "../config/env";
 import { paymentService } from "../services/payment.service";
 import { practiceService } from "../services/practice.service";
 import { publicService } from "../services/public.service";
 import { settingsService } from "../services/settings.service";
 import { testUploadService } from "../services/test-upload.service";
 import { AppError } from "../utils/app-error";
+import { clientCountry } from "../utils/client-ip";
 import { sendOk } from "../utils/respond";
 
 function me(req: Request): UserDoc {
   if (!req.user) throw AppError.unauthorized();
   return req.user;
+}
+
+// Deployed purchases require the country that Vercel derived from the current public IP and
+// forwarded through the signed web proxy. PKR is allowed only for a positively verified Pakistan
+// country. Local runs without PROXY_SECRET have no trusted location, so they fail closed to USD
+// instead of silently reusing the account country.
+function purchaseCurrency(req: Request): Currency {
+  const country = clientCountry(req);
+  if (country) return currencyForIpCountry(country);
+  if (env.PROXY_SECRET) throw AppError.badRequest("We could not verify your current location. Open checkout from the LUE SAT website and try again.");
+  return "USD";
 }
 
 // The admin sees which field is wrong, not just "invalid request".
@@ -39,16 +52,16 @@ export async function getBilling(req: Request, res: Response): Promise<void> {
 }
 
 export async function getCheckout(req: Request, res: Response): Promise<void> {
-  sendOk(res, await paymentService.checkout(me(req), checkoutQuerySchema.parse(req.query)));
+  sendOk(res, await paymentService.checkout(me(req), checkoutQuerySchema.parse(req.query), purchaseCurrency(req)));
 }
 
 export async function submitManualPayment(req: Request, res: Response): Promise<void> {
   const input = parse(manualPaymentSchema.safeParse(req.body), "Check the payment details");
-  sendOk(res, { payment: await paymentService.submitManual(me(req), input) }, 201);
+  sendOk(res, { payment: await paymentService.submitManual(me(req), input, purchaseCurrency(req)) }, 201);
 }
 
 export async function startCardPayment(req: Request, res: Response): Promise<void> {
-  sendOk(res, await paymentService.startCard(me(req), cardCheckoutSchema.parse(req.body)));
+  sendOk(res, await paymentService.startCard(me(req), cardCheckoutSchema.parse(req.body), purchaseCurrency(req)));
 }
 
 export async function completeTestPayment(req: Request, res: Response): Promise<void> {

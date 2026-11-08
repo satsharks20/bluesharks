@@ -5,9 +5,9 @@
 // at once cannot give the plan twice. Paying while a plan runs adds the new period after its end.
 //
 // Prices come from the pricing page as the admin wrote them ("PKR 1,500"), so changing a price in
-// Admin → Settings changes what is charged. Students pay in their account's currency (PKR for
-// Pakistan, USD elsewhere, from the country chosen at sign-up); the pricing page's switch only
-// changes what is shown.
+// Admin → Settings changes what is charged. Purchase quotes receive their currency from the
+// current request's trusted IP country. The account-region helper below remains only for billing
+// summaries and referral records that are not purchase quotes.
 import { PaymentModel, trusted, UserModel, type PaymentDoc, type UserDoc } from "@satsharks/db";
 import { createLogger, toErrorMessage } from "@satsharks/utils";
 import {
@@ -91,12 +91,11 @@ function requireStudent(user: Pick<UserDoc, "role">): void {
   if (user.role !== "student") throw AppError.forbidden("Only student accounts buy plans.");
 }
 
-// Plan, currency, price and discount for a purchase, checked.
-async function quote(user: BuyerUser, plan: PaidPlan, wantedCurrency: Currency | undefined, useOffer: boolean, now: Date) {
+// Plan, IP-derived currency, price and discount for a purchase, checked.
+async function quote(user: BuyerUser, plan: PaidPlan, wantedCurrency: Currency | undefined, currency: Currency, useOffer: boolean, now: Date) {
   requireStudent(user);
-  const currency = currencyFor(user, wantedCurrency);
   if (wantedCurrency && wantedCurrency !== currency) {
-    throw AppError.badRequest(`Your account pays in ${currency}, from the country you chose at sign-up.`);
+    throw AppError.badRequest(`Your location now uses ${currency} prices. Refresh checkout to see the current amount.`);
   }
   const [pricing, settings] = await Promise.all([settingsService.getPricing(), settingsService.getPayments()]);
   const pricePlan = pricing.plans.find((entry) => entry.id === plan);
@@ -179,9 +178,9 @@ async function loadUser(id: mongoose.Types.ObjectId | string): Promise<UserDoc> 
 }
 
 export const paymentService = {
-  async checkout(user: BuyerUser, query: CheckoutQuery): Promise<Checkout> {
+  async checkout(user: BuyerUser, query: CheckoutQuery, currency: Currency): Promise<Checkout> {
     const now = new Date();
-    const q = await quote(user, query.plan, query.currency, query.offer, now);
+    const q = await quote(user, query.plan, query.currency, currency, query.offer, now);
     const waiting = await PaymentModel.findOne({ userId: user._id, status: "review" }).sort({ createdAt: -1 }).lean<PaymentDoc>();
     return {
       plan: query.plan,
@@ -199,9 +198,9 @@ export const paymentService = {
 
   // A bank transfer, JazzCash or Easypaisa payment the student made outside the site, for an admin to
   // approve. One may wait at a time; a transaction ID is accepted once.
-  async submitManual(user: BuyerUser, input: ManualPaymentInput): Promise<PaymentSummary> {
+  async submitManual(user: BuyerUser, input: ManualPaymentInput, currency: Currency): Promise<PaymentSummary> {
     const now = new Date();
-    const q = await quote(user, input.plan, input.currency, input.offer, now);
+    const q = await quote(user, input.plan, input.currency, currency, input.offer, now);
     const method = q.settings.manual[input.method];
     if (!method.enabled || !method.currencies.includes(q.currency)) throw AppError.badRequest(`${PAYMENT_METHOD_LABELS[input.method]} is not available for ${q.currency} payments.`);
     if (await PaymentModel.exists({ userId: user._id, status: "review" })) {
@@ -228,10 +227,10 @@ export const paymentService = {
   },
 
   // Opens the card gateway's checkout. The plan is given when the gateway confirms the payment.
-  async startCard(user: BuyerUser, input: CardCheckoutInput): Promise<{ redirectUrl: string }> {
+  async startCard(user: BuyerUser, input: CardCheckoutInput, currency: Currency): Promise<{ redirectUrl: string }> {
     const gateway = cardGateway();
     if (!gateway) throw AppError.badRequest("Card payments are not available yet. Pay by transfer, or contact LUE SAT on WhatsApp.");
-    const q = await quote(user, input.plan, input.currency, input.offer, new Date());
+    const q = await quote(user, input.plan, input.currency, currency, input.offer, new Date());
     if (!gateway.currencies.includes(q.currency)) throw AppError.badRequest(`Card payments in ${q.currency} are not available yet.`);
     const payment = await PaymentModel.create({
       userId: user._id,

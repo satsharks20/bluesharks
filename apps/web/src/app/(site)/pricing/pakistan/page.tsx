@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import { PRICING_ALTERNATES, PricingPage } from "@/components/pricing-page";
+import { pricingCopy, requestPricingCurrency } from "@/lib/request-pricing";
 
 export const metadata: Metadata = {
   title: "SAT prep prices in Pakistan (PKR)",
@@ -8,13 +9,15 @@ export const metadata: Metadata = {
   openGraph: { title: "LUE SAT prices in Pakistan (PKR)", url: "/pricing/pakistan", locale: "en_PK" },
 };
 
-export default function PricingPakistan() {
+export default async function PricingPakistan() {
+  const currency = await requestPricingCurrency();
+  const copy = pricingCopy(currency);
   return (
     <PricingPage
-      currency="PKR"
+      currency={currency}
       path="/pricing/pakistan"
-      title="SAT prep prices in Pakistan"
-      subtitle="Plans in Pakistani rupees for students in Pakistan. Start free with two full past papers; upgrade when you want every paper."
+      title={copy.title}
+      subtitle={copy.subtitle}
     />
   );
 }

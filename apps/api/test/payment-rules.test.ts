@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { DEFAULT_ACCESS, formatMoney, parsePrice } from "@satsharks/types";
+import { currencyForIpCountry, DEFAULT_ACCESS, formatMoney, parsePrice } from "@satsharks/types";
 import { accessSettingsSchema, paymentSettingsSchema, registerSchema } from "@satsharks/validation";
 import { accessFor, drillSize } from "../src/services/access.service";
 import { startOfLocalDay } from "../src/services/engagement-rules";
@@ -17,6 +17,14 @@ test("prices typed on the pricing page become amounts", () => {
   assert.equal(formatMoney(3500, "PKR"), "PKR 3,500");
   assert.equal(formatMoney(29.99, "USD"), "$29.99");
   assert.equal(formatMoney(30, "USD"), "$30");
+});
+
+test("purchase currency follows the current public-IP country", () => {
+  assert.equal(currencyForIpCountry("PK"), "PKR");
+  assert.equal(currencyForIpCountry("pk"), "PKR");
+  assert.equal(currencyForIpCountry("US"), "USD");
+  assert.equal(currencyForIpCountry("AE"), "USD");
+  assert.equal(currencyForIpCountry(null), "USD");
 });
 
 test("months are calendar months; the 31st becomes the last day of a shorter month", () => {

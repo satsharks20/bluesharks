@@ -84,6 +84,7 @@ function ReportView({ id, canResolve, canEditQuestion }: { id: string; canResolv
   const [dialog, setDialog] = useState<"resolve" | "reopen" | null>(null);
   const [note, setNote] = useState("");
   const [includeSameQuestion, setIncludeSameQuestion] = useState(true);
+  const [notify, setNotify] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ tone: "error" | "info"; text: string } | null>(null);
   const [editedThisVisit, setEditedThisVisit] = useState(false);
@@ -99,7 +100,7 @@ function ReportView({ id, canResolve, canEditQuestion }: { id: string; canResolv
     setMessage(null);
     try {
       if (dialog === "resolve") {
-        const { resolved } = await api<{ resolved: number }>(`/api/admin/reports/${id}/resolve`, { method: "POST", body: { note: note.trim(), includeSameQuestion } });
+        const { resolved } = await api<{ resolved: number }>(`/api/admin/reports/${id}/resolve`, { method: "POST", body: { note: note.trim(), includeSameQuestion, notify } });
         setMessage({ tone: "info", text: resolved > 1 ? `${resolved} reports resolved.` : "Report resolved." });
       } else {
         await api(`/api/admin/reports/${id}/reopen`, { method: "POST", body: { note: note.trim() } });
@@ -107,6 +108,7 @@ function ReportView({ id, canResolve, canEditQuestion }: { id: string; canResolv
       }
       setDialog(null);
       setNote("");
+      setNotify(false);
       await queryClient.invalidateQueries({ queryKey: ["admin"] });
     } catch (caught) {
       setMessage({ tone: "error", text: caught instanceof Error ? caught.message : "Could not update the report" });
@@ -245,6 +247,12 @@ function ReportView({ id, canResolve, canEditQuestion }: { id: string; canResolv
             <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
               <input type="checkbox" checked={includeSameQuestion} onChange={(event) => setIncludeSameQuestion(event.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-500" />
               Also resolve the {otherPending} other pending report{otherPending === 1 ? "" : "s"} on this question
+            </label>
+          )}
+          {dialog === "resolve" && (
+            <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm">
+              <input type="checkbox" checked={notify} onChange={(event) => setNotify(event.target.checked)} className="mt-0.5 h-4 w-4 accent-brand-500" />
+              Tell each student their report was handled
             </label>
           )}
           <div className="mt-5 flex flex-wrap justify-end gap-2">

@@ -1,6 +1,5 @@
-// The pricing page body, shared by /pricing (currency from the visitor's country) and the two
-// region pages /pricing/pakistan (PKR) and /pricing/international (USD), which Google indexes
-// separately with hreflang tags (proposal 4.3 "geo-targeting").
+// The pricing page body, shared by /pricing and the two hreflang routes. All three receive the
+// currency selected from the current request IP; route names no longer override geolocation.
 import type { Metadata } from "next";
 import { PRICING_PLAN_IDS, parsePrice, type Currency, type PricingContent } from "@satsharks/types";
 import { PricingPlans } from "@/app/(site)/pricing/pricing-plans";
@@ -51,9 +50,9 @@ function offersLd(pricing: PricingContent, currencies: Currency[], path: string)
   };
 }
 
-export async function PricingPage({ currency, path, title, subtitle }: { currency: Currency | null; path: string; title: string; subtitle: string }) {
+export async function PricingPage({ currency, path, title, subtitle }: { currency: Currency; path: string; title: string; subtitle: string }) {
   const pricing = await loadPricing();
-  const currencies: Currency[] = currency ? [currency] : ["PKR", "USD"];
+  const currencies: Currency[] = [currency];
   return (
     <div className="py-6 sm:py-10">
       {pricing && <JsonLd data={offersLd(pricing, currencies, path)} />}
