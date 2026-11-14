@@ -219,7 +219,7 @@ function Review({ id, section }: { id: string; section: Section }) {
                 </ul>
               </div>
             )}
-            <QuestionForm section={section} draft={selected.item} onChange={(draft) => update(selected.index, draft)} topics={topics} allowTypeChange />
+            <QuestionForm section={section} draft={selected.item} onChange={(draft) => update(selected.index, draft)} topics={topics} allowTypeChange requireSkill />
           </Card>
         </div>
       )}

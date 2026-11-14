@@ -203,7 +203,7 @@ carry `testUploadId` and `paperId` (the section's paper) and take their modules 
 | `examDate` | `YYYY-MM-DD` \| null | Exams only |
 | `status` | `draft` \| `published` | |
 | `active` | boolean | Published tests only: students can start it |
-| `readingWriting`, `math` | section \| null | `{ fileName, fileSize, status: extracted\|reviewed\|failed, errorMessage, warnings[], questions: UploadQuestion[], uploadedAt, reviewedAt, reviewedBy }`. The PDF itself is never stored |
+| `readingWriting`, `math` | section \| null | `{ fileName, fileSize, status: extracted\|reviewed\|failed, errorMessage, warnings[], questions: UploadQuestion[], uploadedAt, reviewedAt, reviewedBy }`. Every new `UploadQuestion` has a validated nonblank topic and skill; legacy records may still contain null until corrected. The PDF itself is never stored |
 | `paperIds.reading_writing`, `paperIds.math` | ObjectId → Paper \| null | Created on publish (`source: "pdf-upload"`, or `"pdf-upload-exam"` for an exam) |
 | `publishedAt`, `uploadedBy` | | |
 

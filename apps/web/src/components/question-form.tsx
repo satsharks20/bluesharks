@@ -62,6 +62,7 @@ export function QuestionForm({
   onChange,
   topics,
   allowTypeChange,
+  requireSkill = false,
   choiceExtra,
 }: {
   section: Section;
@@ -70,6 +71,8 @@ export function QuestionForm({
   topics: CatalogTopic[];
   // Switching between multiple choice and grid-in (Math only).
   allowTypeChange: boolean;
+  // Uploaded tests require an analytics skill before review can be completed.
+  requireSkill?: boolean;
   // Shown under each answer option (the question bank editor's choice image).
   choiceExtra?: (index: number) => ReactNode;
 }) {
@@ -105,9 +108,17 @@ export function QuestionForm({
           </select>
         </label>
         <label className={`${label} sm:col-span-2`}>
-          Skill
-          <select className={`${inputClass} mt-1 font-normal normal-case`} value={draft.skill} onChange={(event) => set({ skill: event.target.value })}>
-            <option value="">Not set</option>
+          Skill{requireSkill ? " *" : ""}
+          <select
+            className={`${inputClass} mt-1 font-normal normal-case ${requireSkill && !draft.skill ? "border-red-500" : ""}`}
+            value={draft.skill}
+            required={requireSkill}
+            aria-invalid={requireSkill && !draft.skill}
+            onChange={(event) => set({ skill: event.target.value })}
+          >
+            <option value="" disabled={requireSkill}>
+              {requireSkill ? "Select a skill" : "Not set"}
+            </option>
             {draft.skill && !skills.includes(draft.skill) && <option value={draft.skill}>{draft.skill}</option>}
             {skills.map((skill) => (
               <option key={skill} value={skill}>
@@ -115,6 +126,7 @@ export function QuestionForm({
               </option>
             ))}
           </select>
+          {requireSkill && !draft.skill && <span className="mt-1 block text-xs font-normal text-red-700">Choose the exact skill used for analytics and drills.</span>}
         </label>
       </div>
 

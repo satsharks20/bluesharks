@@ -392,7 +392,7 @@ const uploadQuestionSchema = z.object({
   questionType: z.enum(["mcq", "spr"]),
   difficulty: z.enum(DIFFICULTIES),
   topic: z.string().trim().max(100),
-  skill: z.string().trim().max(100).nullable(),
+  skill: z.string().trim().min(1, "Choose a skill").max(100),
   passage: z.string().max(20000).nullable(),
   prompt: z.string().max(20000),
   choices: z.array(z.object({ key: z.string().max(1), text: z.string().max(4000) })).max(4),

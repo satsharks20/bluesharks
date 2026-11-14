@@ -599,7 +599,8 @@ export interface UploadQuestion {
   questionNumber: number;
   questionType: "mcq" | "spr";
   difficulty: Difficulty;
-  // Domain, and optionally the skill, from the question bank's own vocabulary.
+  // Domain and skill from the question bank's own vocabulary. `null` remains only so legacy
+  // uploads can be opened and corrected; new uploads, review saves and publishing require it.
   topic: string;
   skill: string | null;
   passage: string | null;
@@ -731,7 +732,8 @@ export function uploadQuestionProblems(
 
   const topic = topics.find((entry) => entry.topic === question.topic);
   if (!topic) problems.push(`"${question.topic}" is not a ${SECTION_LABELS[section]} domain in the question bank`);
-  else if (question.skill && !topic.skills.includes(question.skill)) problems.push(`"${question.skill}" is not a skill of ${topic.topic}`);
+  else if (!question.skill?.trim()) problems.push("SKILL is required");
+  else if (!topic.skills.includes(question.skill)) problems.push(`"${question.skill}" is not a skill of ${topic.topic}`);
 
   if (question.questionType === "spr") {
     if (section !== "math") problems.push("GRID_IN is only allowed in Math");

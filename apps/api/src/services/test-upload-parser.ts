@@ -23,8 +23,9 @@ export interface ParsedQuestion {
   // Near this line of the extracted text, for error messages.
   line: number;
   questionType: "mcq" | "spr";
-  // As written; matched against the bank's domains and skills by the caller.
+  // As written; matched against the bank's canonical domain and skill names by the caller.
   category: string;
+  skill: string;
   difficulty: Difficulty;
   passage: string | null;
   prompt: string;
@@ -69,11 +70,11 @@ export function plainMathToSite(text: string): string {
     .replace(/ \* /g, " · ");
 }
 
-const FIELD_ORDER = ["CATEGORY", "DIFFICULTY", "TYPE", "PASSAGE", "PROMPT", "A", "B", "C", "D", "ANSWER", "EXPLANATION"] as const;
+const FIELD_ORDER = ["CATEGORY", "SKILL", "DIFFICULTY", "TYPE", "PASSAGE", "PROMPT", "A", "B", "C", "D", "ANSWER", "EXPLANATION"] as const;
 type Field = (typeof FIELD_ORDER)[number];
 const CHOICE_KEYS = ["A", "B", "C", "D"] as const;
 
-const FIELD = /^(SECTION|CATEGORY|DIFFICULTY|TYPE|PASSAGE|PROMPT|A|B|C|D|ANSWER|EXPLANATION)\s*:\s*(.*)$/i;
+const FIELD = /^(SECTION|CATEGORY|SKILL|DIFFICULTY|TYPE|PASSAGE|PROMPT|A|B|C|D|ANSWER|EXPLANATION)\s*:\s*(.*)$/i;
 const SECTION_LINE = /^SECTION\s*:\s*(.*)$/i;
 const MODULE_START = /^MODULE\s+(1|2\s+EASY|2\s+EASIER|2\s+HARD|2\s+HARDER)\s*$/i;
 const MODULE_END = /^END\s+MODULE\s*$/i;
@@ -275,6 +276,7 @@ export function parseSectionText(text: string): SectionParseResult {
       const hasChoices = CHOICE_KEYS.some((key) => values.has(key));
 
       if (!values.has("CATEGORY") || !singleLine(raw("CATEGORY"))) problems.push("CATEGORY is required");
+      if (!values.has("SKILL") || !singleLine(raw("SKILL"))) problems.push("SKILL is required");
       if (!["easy", "medium", "hard"].includes(difficulty)) problems.push("DIFFICULTY must be EASY, MEDIUM or HARD");
 
       if (problems.length > 0) {
@@ -287,6 +289,7 @@ export function parseSectionText(text: string): SectionParseResult {
         line: entry.line,
         questionType: resolved,
         category: singleLine(raw("CATEGORY")),
+        skill: singleLine(raw("SKILL")),
         difficulty: difficulty as Difficulty,
         // Math shows no separate passage, so a Math PASSAGE opens the question text instead.
         passage: isMath ? null : passage || null,

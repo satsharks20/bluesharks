@@ -47,7 +47,9 @@ Admin-facing guide and printable builder: `apps/web/public/full-test/format.html
 SECTION: MATH                 once, before MODULE 1 (READING_WRITING or MATH)
 MODULE 1                      also MODULE 2 EASY / MODULE 2 HARD (EASIER / HARDER accepted)
 QUESTION 1                    numbering restarts at 1 per module, consecutive
-CATEGORY: Algebra             a domain or skill of the bank, for this section
+CATEGORY: Algebra             exact question-bank domain for this section
+SKILL: Linear equations in one variable
+                              required exact skill belonging to CATEGORY
 DIFFICULTY: MEDIUM            EASY | MEDIUM | HARD
 TYPE: GRID_IN                 optional; MULTIPLE_CHOICE (default) or GRID_IN (Math only)
 PASSAGE: ...                  optional (Math: shown as the start of the question text)
@@ -68,14 +70,13 @@ Rules beyond the original spec, because of how this site works:
   Otherwise the file is LaTeX between `$…$`, like the 2,207 bank questions (`$$…$$` on its own line,
   money `$\$78$`): an unpaired `$` and any formula KaTeX cannot render reject the file, and
   math-looking text outside `$…$` only warns. The renderer shows `\$` outside a formula as `$`.
-- **CATEGORY** names a domain (e.g. `Geometry and Trigonometry`) or skill (e.g. `Circles`) of the
-  bank for the section, or one of the other site's names (`SAT Algebra`, `SAT Advanced Math`,
-  `SAT Data & Statistics`, `SAT Geometry`, `SAT Reading Comprehension`, `SAT Vocabulary`,
-  `SAT Grammar & Writing`, matched without "SAT " and with "&" = "and"). For those broad English
-  names the skill is taken from the fixed SAT wording of the prompt ("most logical transition" →
-  Transitions, "conventions of Standard English" → Form, Structure, and Sense, or Boundaries when
-  the choices differ only in punctuation, etc.). Unknown names are reported once per name with
-  the accepted list. There is no category collection.
+- **CATEGORY and SKILL are both required.** `CATEGORY` names the domain (for example `Algebra` or
+  `Craft and Structure`), and `SKILL` names one exact skill under it (for example
+  `Linear equations in one variable` or `Words in Context`). Matching ignores letter case and
+  stores the bank's canonical spelling. Missing labels, unknown labels, and a skill that belongs
+  to another domain reject the PDF with grouped errors. The importer never guesses a skill from
+  question wording. This keeps drills, mock assembly and student analytics complete and accurate.
+  See `docs/full-test-pdf-format.md` for the admin-facing template.
 - **Grid-in answers** must be typeable in the answer box: digits, `.`, `/`, `-`, 5 characters
   (6 if negative). Split on ` or `, `;` and `, ` (so `1,000` is one value, and rejected).
 - R&W passage and prompt are stored separately (this site has both fields).

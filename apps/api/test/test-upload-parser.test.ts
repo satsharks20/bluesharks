@@ -6,6 +6,7 @@ import { isPlainMath, parseSectionText, plainMathToSite, reflow } from "../src/s
 
 const mcq = (n: number, extra = "") => `QUESTION ${n}
 CATEGORY: Algebra
+SKILL: Linear equations in one variable
 DIFFICULTY: MEDIUM${extra}
 PROMPT: If $3x + 7 = 22$, what is the
 value of $x$?
@@ -19,7 +20,8 @@ then divide by $3$.
 END QUESTION`;
 
 const gridIn = (n: number) => `QUESTION ${n}
-CATEGORY: Linear equations in one variable
+CATEGORY: Algebra
+SKILL: Linear equations in one variable
 DIFFICULTY: HARD
 TYPE: GRID_IN
 PROMPT: What is the value of $\\frac{1}{2}$?
@@ -44,6 +46,7 @@ test("a valid Math file gives every module in order, with formulas joined across
   assert.equal(first.prompt, "If $3x + 7 = 22$, what is the value of $x$?");
   assert.equal(first.choiceKey, "B");
   assert.equal(first.category, "Algebra");
+  assert.equal(first.skill, "Linear equations in one variable");
   assert.equal(first.difficulty, "medium");
   assert.equal(first.explanation, "Subtract $7$ from both sides, then divide by $3$.");
   const grid = result.questions[1]!;
@@ -62,6 +65,7 @@ test("MODULE 2 EASIER is the easier module and HARDER the harder one", () => {
 
 const rwQuestion = (n: number) => `QUESTION ${n}
 CATEGORY: Information and Ideas
+SKILL: Central Ideas and Details
 DIFFICULTY: EASY
 PASSAGE: Text 1
 The following text is adapted from a
@@ -126,11 +130,12 @@ test("broken files are rejected whole, with the reason", () => {
   assert.match(errorsFor(["SECTION: MATH", "MODULE 1", mcq(1).replace("END QUESTION", ""), mcq(2), "END MODULE"].join("\n")), /question 1 \(near line \d+\): END QUESTION is missing/);
   assert.match(errorsFor(["SECTION: MATH", mcq(1)].join("\n")), /is outside a module/);
   assert.match(errorsFor(["SECTION: MATH", "MODULE 1", mcq(1).replace("DIFFICULTY: MEDIUM", "DIFFICULTY: MEDIUM\nSECTION: MATH"), "END MODULE"].join("\n")), /SECTION goes once at the top/);
-  assert.match(errorsFor(["SECTION: MATH", "MODULE 1", mcq(1).replace("CATEGORY: Algebra\nDIFFICULTY: MEDIUM", "DIFFICULTY: MEDIUM\nCATEGORY: Algebra"), "END MODULE"].join("\n")), /out of order/);
+  assert.match(errorsFor(["SECTION: MATH", "MODULE 1", mcq(1).replace("SKILL: Linear equations in one variable\nDIFFICULTY: MEDIUM", "DIFFICULTY: MEDIUM\nSKILL: Linear equations in one variable"), "END MODULE"].join("\n")), /out of order/);
   assert.match(errorsFor(["SECTION: MATH", "MODULE 1", gridIn(1).replace("TYPE: GRID_IN", "TYPE: ESSAY"), "END MODULE"].join("\n")), /TYPE must be MULTIPLE_CHOICE or GRID_IN/);
   assert.match(errorsFor(["SECTION: MATH", "MODULE 1", mcq(1).replace("DIFFICULTY: MEDIUM", "DIFFICULTY: TOUGH"), "END MODULE"].join("\n")), /DIFFICULTY must be/);
   assert.match(errorsFor(["SECTION: ENGLISH", mathModule("MODULE 1", 1)].join("\n")), /SECTION must be READING_WRITING or MATH/);
   assert.equal(parseSectionText(mathDocument.replace("CATEGORY: Algebra", "CATEGORY:")).questions.length, 0);
+  assert.match(errorsFor(mathDocument.replace(/SKILL: Linear equations in one variable\n/, "")), /SKILL is required/);
 });
 
 // ---------- question rules (shared by the PDF import, the review screen and publishing) ----------
@@ -153,7 +158,7 @@ const base: UploadQuestion = {
   questionType: "mcq",
   difficulty: "medium",
   topic: "Algebra",
-  skill: null,
+  skill: "Linear equations in one variable",
   passage: null,
   prompt: "What is $x$?",
   choices: ["A", "B", "C", "D"].map((key) => ({ key, text: `$${key.charCodeAt(0)}$` })),
@@ -173,16 +178,17 @@ test("question rules catch what students would trip over", () => {
   assert.match(problems({ prompt: "It costs $78 to enter." }), /no closing "\$"/);
   assert.match(problems({ prompt: "Find $\\frac{1}{2$." }), /cannot be displayed/);
   assert.match(problems({ topic: "SAT Algebra" }), /not a Math domain/);
+  assert.match(problems({ skill: null }), /SKILL is required/);
   assert.match(problems({ skill: "Central Ideas and Details" }), /is not a skill of Algebra/);
   assert.match(problems({ choiceKey: "E" }), /ANSWER must be A, B, C or D/);
   assert.match(problems({ choices: base.choices.slice(0, 3) }), /choices A, B, C and D are all required/);
   assert.match(problems({ questionType: "spr", choices: [], choiceKey: null, acceptedValues: ["x = 5"] }), /cannot be typed/);
   assert.match(problems({ questionType: "spr", choices: [], choiceKey: null, acceptedValues: ["123456"] }), /longer than the answer box/);
   assert.match(problems({ questionType: "spr", choices: [], choiceKey: null, acceptedValues: [] }), /ANSWER is required/);
-  assert.match(problems({ questionType: "spr", choices: [], choiceKey: null, acceptedValues: ["5"], topic: "Information and Ideas" }, "reading_writing"), /GRID_IN is only allowed in Math/);
+  assert.match(problems({ questionType: "spr", choices: [], choiceKey: null, acceptedValues: ["5"], topic: "Information and Ideas", skill: "Central Ideas and Details" }, "reading_writing"), /GRID_IN is only allowed in Math/);
   assert.match(problems({ explanation: " " }), /EXPLANATION is required/);
   // Reading & Writing does not use LaTeX, so a dollar amount there is fine.
-  assert.equal(problems({ topic: "Information and Ideas", prompt: "It costs $78." }, "reading_writing"), "");
+  assert.equal(problems({ topic: "Information and Ideas", skill: "Central Ideas and Details", prompt: "It costs $78." }, "reading_writing"), "");
 });
 
 test("grid-in answers split on 'or', semicolons and comma-space, but not inside a number", () => {

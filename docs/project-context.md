@@ -4,7 +4,7 @@
 what is half-done, and the traps already found. Keep it up to date: every session that changes the
 project adds to the change log at the bottom and corrects anything above that is no longer true.
 
-Last updated: 2026-11-08 (pricing display and purchase quotes now follow the current public-IP country; admin leaderboard and bulk report resolution added. No live data writes.)
+Last updated: 2026-11-15 (full-test PDFs now require an explicit validated skill on every question; review and publishing reject blanks. No live data writes.)
 
 ---
 
@@ -201,7 +201,8 @@ Last updated: 2026-11-08 (pricing display and purchase quotes now follow the cur
   "Full-Length Practice Tests" on Home and sit them through the normal full-test flow; Module 2
   follows the same routing rule (65%). The tagged questions never reach drills, random mocks or
   the catalog. Math may be LaTeX in `$…$` (like the bank) or plain text (the other site's style,
-  converted); CATEGORY is a bank domain or skill, or one of the other site's category names.
+  converted). Every question has separate required `CATEGORY` (domain) and `SKILL` fields; the
+  skill must belong to that domain and is never inferred from wording.
   **Each upload goes to Practice tests or Exams** (chosen in the upload dialog, changeable in Edit
   details, also after publishing). An **exam** (a real administration, e.g. the December SAT) has
   a title and exam date; when active it is a normal card under Exams (year/season filters, Start
@@ -428,6 +429,12 @@ Last updated: 2026-11-08 (pricing display and purchase quotes now follow the cur
 
 ### Last verified
 
+- **Required upload skills (2026-11-15):** no live database writes. Workspace typecheck clean;
+  **85 unit tests** pass (71 API, 14 worker); regenerated public Math and English sample PDFs parse
+  through pdf.js with six questions and no errors. The in-memory end-to-end run passed the complete
+  upload/review/publish/student-sitting path and the new unknown-skill rejection; the full suite
+  later stopped on the pre-existing checkout assertion expecting account-country PKR instead of
+  the current IP-country USD policy. No browser click-through was run.
 - **LUE SAT rebrand + top-20 leaderboard (2026-11-05):** no live database writes. Typecheck clean
   across every workspace; **82 unit tests** (68 API, 14 worker); **29 e2e checks** against a
   throwaway in-memory MongoDB, including 25 temporary ranked students (only ranks 1–20 returned,
@@ -504,6 +511,8 @@ Last updated: 2026-11-08 (pricing display and purchase quotes now follow the cur
 
 ## 3. Git state
 
+- The 2026-11-15 explicit-skill upload work follows `0a8e5ef` (Admin operations and IP-based
+  pricing) on `main`; Umair requested that the same commit be pushed to both Git remotes.
 - `main` (newest first): `41f2bef` user management in admin (Umair), `8354da1` Phase 2 (Umair),
   `40120f4` nav sign-in/out fix, `777eba9` login/port fix, fonts, adaptive mocks, reference sheet,
   calculator; below: `d61bff3`, `aff4a62` (Umair) and `73b574d` (Phase 1 commit by Claude).
@@ -623,6 +632,7 @@ Web calls go to its own origin; `next.config.ts` rewrites `/api/*` to `API_URL`
 | 2026-10-30 | Client via Umair: no repeated questions (unseen first; when an exam runs out, **reuse the ones seen longest ago**, not block); the **official Bluebook module pattern** with exact counts (Claude to research; College Board practice tests used); **Bluebook-style Highlights & Notes**; exam question counts **for premium accounts only**. Umair allowed writing the fingerprint field to the live database and using a bluecorn token as needed |
 | 2026-10-31 | Client via Umair: areas to improve per section, with an option to choose Reading & Writing or Math. The card keeps the name **"Skills breakdown"** (Umair; do not rename it). Claude chose: the free plan shows 3 per section instead of 3 overall, and error patterns and timing stay for both sections together |
 | 2026-10-08 | An upload asks where it goes: Practice tests or Exams. A real SAT (e.g. December) goes to Exams. Umair chose "exam card + full test": it behaves like the other exams (drill, random mocks) and can also be taken whole as a fixed adaptive test |
+| 2026-11-15 | Every full-test PDF question must state an explicit `SKILL` after its domain `CATEGORY`; missing or mismatched skills are errors, never inferred or left blank |
 
 ## 7. Facts about the source (verified)
 
@@ -767,9 +777,10 @@ Web calls go to its own origin; `next.config.ts` rewrites `/api/*` to `API_URL`
 0000. **Deploying the 2026-10-31 Skills breakdown change:** API (Railway) and web (Vercel) must go
    live together: `skillsStep` became `skillSteps`, and `/analytics` breaks while one side is older.
    Check Railway did not "Skip" or lag (§8). The default pricing row now says "Top 3 per section",
-   but the live saved pricing keeps its old text until edited in Admin → Settings. **132 uploaded
-   Math questions have no skill**, so they would be left out of the Skills breakdown once students
-   answer them (no such answers logged on 2026-10-31; the 162 uploaded R&W questions have skills).
+   but the live saved pricing keeps its old text until edited in Admin → Settings. **132 legacy
+   uploaded Math questions have no skill** and need an admin to classify them; new PDF uploads and
+   review saves cannot add another blank skill. Until corrected, those legacy questions are left
+   out of Skills breakdown once students answer them (none had logs on 2026-10-31).
 000. **Deploying the 2026-10-30 work:** API (Railway) and web (Vercel) together; the web's
    highlight save calls a new route. The API change is safe for the current web (new optional
    fields only). Fingerprints are already on Atlas (all 10,221). A test in progress at deploy time
@@ -787,8 +798,9 @@ Web calls go to its own origin; `next.config.ts` rewrites `/api/*` to `API_URL`
    click through an uploaded Exam in the browser: upload, activate, card under Exams with Take
    Full Test (the API side passed the e2e).
    **Try the upload with the client's real PDFs** (Admin → Full tests). They must follow the format
-   (`/full-test/format.html`). PDFs made for the other SAT Sharks site upload unchanged (its
-   category names and plain-text Math are accepted). Word/Google Docs exports are untested.
+   (`/full-test/format.html`). Older PDFs from the other SAT Sharks site must first add an explicit
+   `SKILL` after every `CATEGORY`; their plain-text Math remains accepted. Word/Google Docs exports
+   are untested.
 
    **Set up Admin → Access** after deploying it: choose the free exams/tests (the proposal says
    2 full papers for free), which ways of practising are free, and "added later" (Paid only fits
@@ -1289,3 +1301,11 @@ Newest last. One entry per session or major step.
   the signed country are refused; local development without `PROXY_SECRET` fails closed to USD, so
   PKR is never shown or charged unless Pakistan was positively identified. No live database or
   settings writes.
+- **2026-11-15 — Explicit skills on uploaded questions (Umair).** Replaced skill inference in the
+  full-test PDF pipeline with a required `SKILL` field after `CATEGORY`. The parser, review API,
+  live review checks and publish checks now reject missing, unknown or cross-domain skills; valid
+  labels are stored with canonical bank spelling. The review form marks Skill required, the admin
+  help and printable builder explain the contract, public sample PDFs were regenerated, and
+  `docs/full-test-pdf-format.md` is the standalone template. Legacy published questions remain
+  readable and are not guessed or rewritten; the 132 known blank Math skills still need manual
+  classification. Verification is recorded in §2 Last verified. No live database writes.

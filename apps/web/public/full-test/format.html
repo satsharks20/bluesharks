@@ -62,12 +62,13 @@
         <li><code>SECTION: READING_WRITING</code> (English) or <code>SECTION: MATH</code> once at the top.</li>
         <li>Three modules, each between its line and <code>END MODULE</code>: <code>MODULE 1</code>, <code>MODULE 2 EASY</code>, <code>MODULE 2 HARD</code> (<code>EASIER</code> / <code>HARDER</code> also work). Students who get at least the routing threshold of Module 1 right (65%) get the hard Module 2.</li>
         <li>Questions are numbered from <code>QUESTION 1</code> in every module, with no gaps, and end with <code>END QUESTION</code>.</li>
-        <li>Fields in this order: <code>CATEGORY</code>, <code>DIFFICULTY</code>, <code>TYPE</code> (optional), <code>PASSAGE</code> (optional), <code>PROMPT</code>, <code>A</code>–<code>D</code>, <code>ANSWER</code>, <code>EXPLANATION</code>. A value can run over several lines.</li>
+        <li>Fields in this order: <code>CATEGORY</code>, <code>SKILL</code>, <code>DIFFICULTY</code>, <code>TYPE</code> (optional), <code>PASSAGE</code> (optional), <code>PROMPT</code>, <code>A</code>–<code>D</code>, <code>ANSWER</code>, <code>EXPLANATION</code>. A value can run over several lines.</li>
         <li>An official module has 27 English or 22 Math questions. Other sizes are allowed but are flagged, and scaled scores need official sizes.</li>
       </ul>
       <table>
         <tr><th>Field</th><th>What to write</th></tr>
-        <tr><td><code>CATEGORY</code></td><td>A domain or a skill from the question bank, for this section. Math domains: Algebra, Advanced Math, Problem-Solving and Data Analysis, Geometry and Trigonometry. English: Craft and Structure, Information and Ideas, Standard English Conventions, Expression of Ideas. A skill name (e.g. Linear equations in one variable) also works, and so do the other LUE SAT site's names (SAT Algebra, SAT Advanced Math, SAT Data &amp; Statistics, SAT Geometry, SAT Reading Comprehension, SAT Vocabulary, SAT Grammar &amp; Writing); for English the exact skill is then taken from the question's wording. Unknown names are listed when you upload.</td></tr>
+        <tr><td><code>CATEGORY</code></td><td>The exact domain from the question bank. Math: Algebra, Advanced Math, Problem-Solving and Data Analysis, or Geometry and Trigonometry. English: Craft and Structure, Information and Ideas, Standard English Conventions, or Expression of Ideas.</td></tr>
+        <tr><td><code>SKILL</code></td><td>Required on every question. Write the exact bank skill belonging to the selected category, for example <code>Linear equations in one variable</code>. The upload rejects missing, unknown, or mismatched skills instead of guessing.</td></tr>
         <tr><td><code>DIFFICULTY</code></td><td><code>EASY</code>, <code>MEDIUM</code> or <code>HARD</code></td></tr>
         <tr><td><code>TYPE</code></td><td><code>MULTIPLE_CHOICE</code> (the default) or <code>GRID_IN</code> (Math only: the student types the answer; no A–D)</td></tr>
         <tr><td><code>ANSWER</code></td><td><code>A</code>–<code>D</code>, or for a grid-in every accepted form separated by <code>or</code>, e.g. <code>0.5 or 1/2</code>. Students can type digits, <code>.</code>, <code>/</code> and <code>-</code> only, 5 characters (6 if negative).</td></tr>
@@ -110,6 +111,7 @@
         READING_WRITING: [
           {
             category: "Craft and Structure",
+            skill: "Text Structure and Purpose",
             difficulty: "MEDIUM",
             passage:
               "The following text is adapted from a 1913 novel. The narrator describes a quiet harbor town at dawn, when the fishing boats return and the market slowly comes to life.",
@@ -125,6 +127,7 @@
           },
           {
             category: "Standard English Conventions",
+            skill: "Form, Structure, and Sense",
             difficulty: "EASY",
             passage: "The committee reviewed every proposal carefully, and its final report ______ three clear recommendations.",
             prompt: "Which choice completes the text so that it conforms to the conventions of Standard English?",
@@ -136,6 +139,7 @@
         MATH: [
           {
             category: "Algebra",
+            skill: "Linear functions",
             difficulty: "MEDIUM",
             prompt: "A gym charges a one-time fee of $\\$90$ plus $\\$24$ per month. Which expression gives the total cost, in dollars, of a membership for $n$ months?",
             options: ["$90n + 24$", "$24n + 90$", "$114n$", "$24(n + 90)$"],
@@ -144,6 +148,7 @@
           },
           {
             category: "Advanced Math",
+            skill: "Equivalent expressions",
             difficulty: "HARD",
             type: "GRID_IN",
             prompt: "What is the value of $\\frac{1}{2} + \\frac{1}{4}$?",
@@ -159,7 +164,7 @@
       const field = (label, value) => `<span class="label">${label}:</span> <span class="editable" contenteditable="true">${escapeHtml(value)}</span>`;
 
       function questionHtml(q) {
-        const lines = [`<span class="label">QUESTION <span class="question-number">1</span></span>`, field("CATEGORY", q.category), field("DIFFICULTY", q.difficulty)];
+        const lines = [`<span class="label">QUESTION <span class="question-number">1</span></span>`, field("CATEGORY", q.category), field("SKILL", q.skill), field("DIFFICULTY", q.difficulty)];
         if (q.type === "GRID_IN") lines.push(field("TYPE", "GRID_IN"));
         if (q.passage) lines.push(field("PASSAGE", q.passage));
         lines.push(field("PROMPT", q.prompt));

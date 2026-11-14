@@ -133,6 +133,17 @@ function formatErrors(heading: string, errors: string[]): string {
   return [heading, ...listed].join("\n");
 }
 
+// A legacy PDF can omit SKILL on every question. Report that once instead of making the admin
+// work through twenty identical lines before they understand the document-level problem.
+function groupMissingSkillErrors(errors: string[]): string[] {
+  const missing = errors.filter((error) => error.endsWith(": SKILL is required."));
+  if (missing.length === 0) return errors;
+  return [
+    `SKILL is required on ${missing.length} question${missing.length === 1 ? "" : "s"}. Add it immediately after CATEGORY in every question.`,
+    ...errors.filter((error) => !error.endsWith(": SKILL is required.")),
+  ];
+}
+
 // The other SAT Sharks site's category names (and close variants) → this bank's domain, after
 // dropping a leading "SAT " and reading "&" as "and".
 const CATEGORY_ALIASES: Record<string, string> = {
@@ -152,52 +163,27 @@ const CATEGORY_ALIASES: Record<string, string> = {
   writing: "Expression of Ideas",
 };
 
-// Reading & Writing questions use fixed wording, which names the skill. Used when the category is
-// one of the broad names above, so "SAT Grammar & Writing" lands on Transitions, Boundaries, etc.
-const RW_SKILL_BY_WORDING: [RegExp, string, string][] = [
-  [/most logical and precise word or phrase/i, "Craft and Structure", "Words in Context"],
-  [/most logical transition/i, "Expression of Ideas", "Transitions"],
-  [/relevant information from the notes/i, "Expression of Ideas", "Rhetorical Synthesis"],
-  [/conventions of Standard English/i, "Standard English Conventions", "Form, Structure, and Sense"],
-  [/Text 2|both texts/i, "Craft and Structure", "Cross-Text Connections"],
-  [/main purpose|overall structure|function of|how the second sentence|how the (?:first|last) sentence/i, "Craft and Structure", "Text Structure and Purpose"],
-  [/main idea|According to the text|best describes/i, "Information and Ideas", "Central Ideas and Details"],
-  [/support|illustrate|quotation|data/i, "Information and Ideas", "Command of Evidence"],
-  [/conclusion|Based on the text|most logically completes/i, "Information and Ideas", "Inferences"],
-];
-
-// Choices that differ only in punctuation test sentence boundaries, not form.
-const onlyPunctuationDiffers = (choices: { text: string }[]) =>
-  choices.length > 1 && new Set(choices.map((choice) => choice.text.replace(/[\s.,;:—–-]+/g, "").toLowerCase())).size === 1;
-
-// CATEGORY → this bank's domain and skill: an exact domain or skill name, or one of the aliases.
-function resolveCategory(parsed: ParsedQuestion, section: Section, vocab: Vocabulary): { topic: string; skill: string | null } | null {
+// CATEGORY + SKILL map to canonical bank labels. Skills are explicit: no wording-based guessing.
+function resolveCategory(parsed: ParsedQuestion, vocab: Vocabulary): { topic: string; skill: string | null } | null {
   const exact = vocab.lookup.get(parsed.category.trim().toLowerCase());
-  if (exact) return exact;
   const key = parsed.category.trim().toLowerCase().replace(/^sat\s+/, "").replace(/&/g, "and").replace(/\s+/g, " ");
-  const domain = CATEGORY_ALIASES[key];
-  if (!domain || !vocab.topics.some((entry) => entry.topic === domain)) return null;
-  if (section === "reading_writing") {
-    const rule = RW_SKILL_BY_WORDING.find(([pattern]) => pattern.test(parsed.prompt));
-    if (rule) {
-      const [, topic, found] = rule;
-      const skill = topic === "Standard English Conventions" && onlyPunctuationDiffers(parsed.choices) ? "Boundaries" : found;
-      if (vocab.topics.find((entry) => entry.topic === topic)?.skills.includes(skill)) return { topic, skill };
-    }
-  }
-  return { topic: domain, skill: null };
+  const domain = exact?.skill === null ? exact.topic : CATEGORY_ALIASES[key];
+  const topic = vocab.topics.find((entry) => entry.topic === domain);
+  if (!topic) return null;
+  const skill = topic.skills.find((entry) => entry.toLowerCase() === parsed.skill.trim().toLowerCase());
+  return { topic: topic.topic, skill: skill ?? parsed.skill };
 }
 
-function toUploadQuestion(parsed: ParsedQuestion, section: Section, vocab: Vocabulary): UploadQuestion {
-  const match = resolveCategory(parsed, section, vocab);
+function toUploadQuestion(parsed: ParsedQuestion, vocab: Vocabulary): UploadQuestion {
+  const match = resolveCategory(parsed, vocab);
   return {
     module: parsed.module,
     questionNumber: parsed.questionNumber,
     questionType: parsed.questionType,
     difficulty: parsed.difficulty,
-    // An unknown category is kept as written, so the error names it.
+    // Unknown values are kept as written, so validation names the exact field to fix.
     topic: match?.topic ?? parsed.category,
-    skill: match?.skill ?? null,
+    skill: match?.skill ?? parsed.skill,
     passage: parsed.passage,
     prompt: parsed.prompt,
     choices: parsed.choices,
@@ -224,15 +210,15 @@ async function extractSection(file: UploadedFile, expected: Section): Promise<Te
   }
 
   const parsed = parseSectionText(text);
-  const errors = [...parsed.errors];
+  const errors = groupMissingSkillErrors(parsed.errors);
   if (parsed.section && parsed.section !== expected) {
     errors.unshift(`This file says SECTION: ${parsed.section.toUpperCase()}, but it was uploaded as the ${SECTION_FILE_LABEL[expected]} file.`);
   }
   let questions: UploadQuestion[] = [];
   if (errors.length === 0) {
     const vocab = await vocabulary(expected);
-    questions = parsed.questions.map((question) => toUploadQuestion(question, expected, vocab));
-    errors.push(...groupCategoryErrors(problemsOf(questions, expected, vocab), vocab));
+    questions = parsed.questions.map((question) => toUploadQuestion(question, vocab));
+    errors.push(...groupLabelErrors(problemsOf(questions, expected, vocab), vocab));
   }
   if (errors.length > 0) return failed(formatErrors(`The ${SECTION_FILE_LABEL[expected]} PDF does not match the required format:`, errors));
   const warnings = warningsOf(questions, expected);
@@ -242,17 +228,35 @@ async function extractSection(file: UploadedFile, expected: Section): Promise<Te
   return { ...base, status: "extracted", errorMessage: "", warnings, questions };
 }
 
-// One line per unknown category instead of one per question, with the names that do work.
-function groupCategoryErrors(errors: string[], vocab: Vocabulary): string[] {
-  const unknown = new Map<string, number>();
+// One line per repeated bad domain/skill instead of one per question.
+function groupLabelErrors(errors: string[], vocab: Vocabulary): string[] {
+  const unknownCategories = new Map<string, number>();
+  const unknownSkills = new Map<string, { count: number; topic: string }>();
   const rest = errors.filter((error) => {
-    const match = /question \d+: "(.+)" is not a .+ domain in the question bank\.$/.exec(error);
-    if (!match) return true;
-    unknown.set(match[1]!, (unknown.get(match[1]!) ?? 0) + 1);
-    return false;
+    const category = /question \d+: "(.+)" is not a .+ domain in the question bank\.$/.exec(error);
+    if (category) {
+      unknownCategories.set(category[1]!, (unknownCategories.get(category[1]!) ?? 0) + 1);
+      return false;
+    }
+    const skill = /question \d+: "(.+)" is not a skill of (.+)\.$/.exec(error);
+    if (skill) {
+      const key = `${skill[2]}\u0000${skill[1]}`;
+      const current = unknownSkills.get(key);
+      unknownSkills.set(key, { count: (current?.count ?? 0) + 1, topic: skill[2]! });
+      return false;
+    }
+    return true;
   });
   const names = vocab.topics.map((entry) => entry.topic).join(", ");
-  return [...[...unknown].map(([name, count]) => `CATEGORY "${name}" (${count} question${count === 1 ? "" : "s"}) is not a domain or skill of the question bank. Use one of: ${names}, or a skill name.`), ...rest];
+  return [
+    ...[...unknownCategories].map(([name, count]) => `CATEGORY "${name}" (${count} question${count === 1 ? "" : "s"}) is not a domain in the question bank. Use one of: ${names}.`),
+    ...[...unknownSkills].map(([key, value]) => {
+      const skill = key.split("\u0000")[1]!;
+      const accepted = vocab.topics.find((entry) => entry.topic === value.topic)?.skills.join(", ") ?? "";
+      return `SKILL "${skill}" (${value.count} question${value.count === 1 ? "" : "s"}) is not a skill of ${value.topic}. Use one of: ${accepted}.`;
+    }),
+    ...rest,
+  ];
 }
 
 // ---------- views ----------

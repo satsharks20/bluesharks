@@ -80,6 +80,11 @@ and score is kept, and you can publish it again any time).
 Uploaded full tests (*Full tests* in the sidebar) are switched on with *Activate*; an inactive
 published test can also be **scheduled** to activate itself.
 
+Every uploaded question must state both `CATEGORY` (its domain) and `SKILL` using the question
+bank's exact labels. Uploads with a missing or mismatched skill are rejected before review; the
+review form also requires a skill before **Save & mark reviewed**. The complete template is in
+`docs/full-test-pdf-format.md` and in the printable builder linked from the Full tests page.
+
 ## Mock question pattern (Settings → Adaptive routing)
 
 **Official question pattern** (on by default): every mock module built from the question bank has

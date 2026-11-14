@@ -269,7 +269,7 @@ Details in `docs/full-test-upload.md`. Read routes need `papers:read`, the rest 
 | `GET /api/admin/test-uploads/:id` | `{ upload (with questions), topics }`; `topics` = the bank's domains and skills per section |
 | `PATCH /api/admin/test-uploads/:id` | Body as on upload: `{ kind, title, year, testNumber }` or `{ kind: "exam", title, examDate }`. Changing `kind` of a published test moves it between practice tests and Exams |
 | `POST /api/admin/test-uploads/:id/sections/:section/file` | Multipart `file`: replace one section (`reading_writing` / `math`). `409` once published |
-| `PUT /api/admin/test-uploads/:id/sections/:section` | Body `{ questions: UploadQuestion[] }` in order (renumbered per module). Validated like the PDF; marks the section `reviewed`. Up to 2 MB |
+| `PUT /api/admin/test-uploads/:id/sections/:section` | Body `{ questions: UploadQuestion[] }` in order (renumbered per module). `topic` and `skill` are both required and the skill must belong to the topic. Validated like the PDF; marks the section `reviewed`. Up to 2 MB |
 | `POST /api/admin/test-uploads/:id/publish` | Both sections reviewed; creates two hidden papers and their tagged questions. `409` if already published |
 | `POST /api/admin/test-uploads/:id/active` | Body `{ active }`. Activating needs all six modules non-empty and every question answered |
 | `DELETE /api/admin/test-uploads/:id` | Drafts only (`409` for a published test) |
