@@ -29,7 +29,6 @@ import {
 } from "@satsharks/db";
 import {
   FULL_TEST_BREAK_MINUTES,
-  EXAM_UPLOAD_SOURCE,
   FULL_TEST_QUESTION_TAG,
   MOCK_FORMAT,
   MOCK_MODULE_LABELS,
@@ -674,8 +673,6 @@ async function baseCatalog(): Promise<BaseCatalog> {
       examId,
       name: typeof meta.examName === "string" ? meta.examName : paper.title,
       examDate: typeof meta.examDate === "string" ? meta.examDate : null,
-      // Uploaded exams can also be taken whole, as a fixed full test.
-      testUploadId: paper.source === EXAM_UPLOAD_SOURCE && typeof paper.metadata?.testUploadId === "string" ? paper.metadata.testUploadId : null,
       sections: {},
     };
     for (const section of paper.sections) {
@@ -875,7 +872,8 @@ export const practiceService = {
     return fullTestSummary(userId, saved!);
   },
 
-  // Active uploaded practice tests a student can sit.
+  // Active uploaded practice tests a student can sit. Uploaded exams use the same drill/mock
+  // hierarchy as every other exam and are intentionally not exposed as fixed full tests.
   async practiceTests(access: UserAccess): Promise<PracticeTestListing[]> {
     const tests = await testUploadService.listActive();
     return pinnedFirst(tests.map((test) => ({ ...test, ...display(access, uploadAccessKey(test.id)) })));
@@ -917,8 +915,11 @@ export const practiceService = {
 
     let source: MockSource;
     if (fullTest.testUploadId) {
-      const math = await testUploadService.sectionPaper(String(fullTest.testUploadId), "math", false);
-      source = { fixed: { paperId: math.paperId, testUploadId: fullTest.testUploadId } };
+      // The upload record may have been deleted by an admin after this sitting began. The full test
+      // keeps its paper ids so the student can still finish without reopening the deleted test.
+      const paperId = fullTest.paperIds.math[0];
+      if (!paperId) throw AppError.conflict("This practice test has no Math paper. Please tell LUE SAT.");
+      source = { fixed: { paperId, testUploadId: fullTest.testUploadId } };
     } else {
       const math = await checkedMockPool(userId, "math", fullTest.paperIds.math.map(String), undefined, access);
       source = { pool: math.pool, paperIds: math.paperIds, extraPaperIds: math.extraPaperIds };

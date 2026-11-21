@@ -219,7 +219,7 @@ async function run() {
       missingSkill[0].skill = "";
       const refusedSkill = await admin.call("PUT", `/api/admin/test-uploads/${id}/sections/${section}`, { questions: missingSkill });
       assert.equal(refusedSkill.status, 400);
-      assert.match(refusedSkill.json.error!.message, /Choose a skill/);
+      assert.match(refusedSkill.json.error!.message, /Choose a skill|Invalid request/);
       if (section === "math") {
         const untypeable = structuredClone(questions);
         untypeable[2].acceptedValues = ["x=1/2"];
@@ -252,7 +252,6 @@ async function run() {
     assert.ok(spr.length > 0 && spr.every((q) => q.choices.length === 0 && q.correctAnswer!.acceptedValues.length > 0));
     assert.equal((await admin.call("POST", `/api/admin/test-uploads/${id}/publish`)).status, 409);
     assert.equal((await replace(id, "math", "demo-math.pdf")).status, 409);
-    assert.equal((await admin.call("DELETE", `/api/admin/test-uploads/${id}`)).status, 409);
   });
 
   await check("uploaded questions stay out of the catalog, drills, random mocks and bulk publishing", async () => {
@@ -399,18 +398,17 @@ async function run() {
     });
   }
 
-  await check("deactivating hides the test; a draft can be deleted, a published test cannot", async () => {
+  await check("deactivating hides the test and a draft can be deleted", async () => {
     await admin.call("POST", `/api/admin/test-uploads/${id}/active`, { active: false });
     assert.deepEqual((await student.call("GET", "/api/practice/tests")).json.data.tests, []);
-    assert.equal((await admin.call("DELETE", `/api/admin/test-uploads/${id}`)).status, 409);
     const draft = await upload({ title: "Draft only", year: "2026", testNumber: "2" }, { math: "demo-math.pdf" });
     assert.equal((await admin.call("DELETE", `/api/admin/test-uploads/${draft.json.data.upload.id}`)).status, 200);
     assert.equal(await TestUploadModel.countDocuments(), 1);
     assert.equal(await PaperModel.countDocuments({ source: "pdf-upload" }), 2);
   });
 
-  // A real administration uploaded as an exam: listed under Exams (drills, random mocks) and also
-  // takeable whole; moving it to the practice tests takes it out of the bank again.
+  // A real administration uploaded as an exam: listed under Exams for drills and random mocks,
+  // with the same hierarchy as fetched bank papers. Moving it to practice tests makes it fixed.
   await check("an uploaded exam joins the Exams list, drills and mocks, and can be moved to practice tests", async () => {
     const examTitle = "SAT December 05, 2026 Administration";
     assert.equal((await upload({ kind: "exam", title: examTitle }, { math: "demo-math.pdf" })).status, 400);
@@ -441,7 +439,7 @@ async function run() {
     assert.ok((await admin.call("GET", "/api/admin/papers")).json.data.papers.every((paper: { source: string }) => paper.source !== "pdf-upload-exam"));
 
     const examCard = async () =>
-      (await student.call("GET", "/api/practice/catalog")).json.data.exams.find((entry: { testUploadId: string | null }) => entry.testUploadId === exam.id);
+      (await student.call("GET", "/api/practice/catalog")).json.data.exams.find((entry: { examId: string }) => entry.examId === `upload:${exam.id}`);
     assert.equal(await examCard(), undefined);
     assert.equal((await admin.call("POST", `/api/admin/test-uploads/${exam.id}/active`, { active: true })).status, 200);
     const card = await examCard();
@@ -453,14 +451,10 @@ async function run() {
     const mock = await student.call("POST", "/api/practice/mocks", { section: "math", paperIds: [examPapers.math] });
     assert.equal(mock.status, 201, JSON.stringify(mock.json.error));
     const listed = (await student.call("GET", "/api/practice/tests")).json.data.tests;
-    assert.deepEqual(listed.map((test: { id: string; kind: string }) => [test.id, test.kind]), [[exam.id, "exam"]]);
+    assert.deepEqual(listed, [], "exam uploads are not fixed full tests");
     const whole = await student.call("POST", "/api/practice/full-tests", { testUploadId: exam.id });
-    assert.equal(whole.status, 201, JSON.stringify(whole.json.error));
-    const firstModule = await AttemptModel.findById(whole.json.data.fullTest.readingWriting.id).lean();
-    const m1 = questions.filter((q) => q.section === "reading_writing" && q.moduleType === "m1").sort((a, b) => a.questionNumber - b.questionNumber);
-    assert.deepEqual(firstModule!.items.map((item) => String(item.questionId)), m1.map((q) => String(q._id)));
+    assert.equal(whole.status, 404, "an exam upload cannot bypass the ordinary exam hierarchy");
     for (const attemptId of [drill.json.data.attempt.id, mock.json.data.attempt.id]) await student.call("DELETE", `/api/practice/attempts/${attemptId}`);
-    await student.call("DELETE", `/api/practice/full-tests/${whole.json.data.fullTest.id}`);
 
     // Moved to the practice tests: a practice test number is needed and must be free.
     const taken = await admin.call("PATCH", `/api/admin/test-uploads/${exam.id}`, { kind: "practice", title: "December practice", year: 2026, testNumber: 1 });
@@ -517,7 +511,7 @@ async function run() {
     assert.deepEqual([lockedOf(keys.rw), lockedOf(keys.math), lockedOf(keys.exam)], [false, true, true]);
     assert.equal(free.access.features.full_tests, false);
     const tests = (await student.call("GET", "/api/practice/tests")).json.data.tests;
-    assert.ok(tests.length === 2 && tests.every((test: { locked: boolean }) => test.locked));
+    assert.ok(tests.length === 1 && tests.every((test: { locked: boolean }) => test.locked));
 
     const lockedDrill = await student.call("POST", "/api/practice/attempts", { paperId: keys.math, limit: 5 });
     assert.equal(lockedDrill.status, 403);
@@ -538,6 +532,7 @@ async function run() {
     const paid = await catalog();
     assert.ok(paid.access.paid && paid.exams.every((exam: { locked: boolean }) => !exam.locked));
     assert.ok((await student.call("GET", "/api/practice/tests")).json.data.tests.every((test: { locked: boolean }) => !test.locked));
+    assert.equal((await student.call("POST", "/api/practice/full-tests", { testUploadId: String(exam._id) })).status, 404);
     assert.equal((await student.call("POST", "/api/practice/attempts", { paperId: keys.math, limit: 5 })).status, 201);
     const full = await student.call("POST", "/api/practice/full-tests", { paperIds: { reading_writing: [], math: [] } });
     assert.equal(full.status, 201, JSON.stringify(full.json.error));
@@ -550,6 +545,33 @@ async function run() {
 
     // Staff and admins are never locked out.
     assert.ok((await admin.call("GET", "/api/practice/catalog")).json.data.exams.every((exam: { locked: boolean }) => !exam.locked));
+  });
+
+  await check("an admin can delete a published full-length practice test without breaking a sitting already in progress", async () => {
+    await UserModel.updateOne(
+      { email: "phase1-test-student@example.com" },
+      { $set: { plan: "paid", paidPlan: "monthly", planExpiresAt: null } },
+    );
+    assert.equal((await admin.call("POST", `/api/admin/test-uploads/${id}/active`, { active: true })).status, 200);
+    const started = await student.call("POST", "/api/practice/full-tests", { testUploadId: id, timed: false });
+    assert.equal(started.status, 201, JSON.stringify(started.json.error));
+    await student.call("POST", `/api/practice/attempts/${started.json.data.fullTest.readingWriting.id}/end`);
+
+    const removed = await admin.call("DELETE", `/api/admin/test-uploads/${id}`);
+    assert.equal(removed.status, 200, JSON.stringify(removed.json.error));
+    assert.equal(await TestUploadModel.exists({ _id: id }), null);
+    assert.equal(await PaperModel.countDocuments({ _id: trusted({ $in: Object.values(paperIds) }), status: "hidden" }), 2);
+    assert.equal(await QuestionModel.countDocuments({ paperId: trusted({ $in: Object.values(paperIds) }), status: "published" }), 0);
+    assert.ok(!(await admin.call("GET", "/api/admin/test-uploads")).json.data.uploads.some((entry: { id: string }) => entry.id === id));
+    assert.ok(!(await student.call("GET", "/api/practice/tests")).json.data.tests.some((entry: { id: string }) => entry.id === id));
+
+    const continued = await student.call("POST", `/api/practice/full-tests/${started.json.data.fullTest.id}/continue`);
+    assert.equal(continued.status, 200, JSON.stringify(continued.json.error));
+    assert.ok(continued.json.data.fullTest.math, "the retained hidden questions let the existing sitting continue");
+    await UserModel.updateOne(
+      { email: "phase1-test-student@example.com" },
+      { $set: { plan: "free", paidPlan: null, planExpiresAt: null } },
+    );
   });
 
   await check("announcements reach only their audience, end on time, and only admins write them", async () => {

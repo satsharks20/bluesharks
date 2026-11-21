@@ -4,7 +4,7 @@
 what is half-done, and the traps already found. Keep it up to date: every session that changes the
 project adds to the change log at the bottom and corrects anything above that is no longer true.
 
-Last updated: 2026-11-15 (full-test PDFs now require an explicit validated skill on every question; review and publishing reject blanks. No live data writes.)
+Last updated: 2026-11-22 (published full-length tests can be deleted safely; exam uploads now follow the ordinary exam hierarchy without “Take Full Test.” No live data writes.)
 
 ---
 
@@ -206,7 +206,9 @@ Last updated: 2026-11-15 (full-test PDFs now require an explicit validated skill
   **Each upload goes to Practice tests or Exams** (chosen in the upload dialog, changeable in Edit
   details, also after publishing). An **exam** (a real administration, e.g. the December SAT) has
   a title and exam date; when active it is a normal card under Exams (year/season filters, Start
-  Exam = drill), its questions join drills and random mocks, and the card adds **Take Full Test**.
+  Exam = drill), and its questions join drills and random mocks. It follows the same hierarchy as
+  fetched bank papers and does not add **Take Full Test**. Admins can delete draft or published
+  uploads; published papers/questions stay hidden so existing sittings and results remain usable.
 - **Question editor** (bank, reports, uploaded tests): image drag-and-drop upload (PNG/JPEG/WebP,
   stored in `assets`), editable choices with Set/Correct, question-type switch (Math), Math symbol
   bar and a visual equation editor (MathLive), live preview including the explanation.
@@ -1309,3 +1311,14 @@ Newest last. One entry per session or major step.
   `docs/full-test-pdf-format.md` is the standalone template. Legacy published questions remain
   readable and are not guessed or rewritten; the 132 known blank Math skills still need manual
   classification. Verification is recorded in §2 Last verified. No live database writes.
+- **2026-11-22 — Delete published full-length tests; fetched/uploaded exams use the normal hierarchy
+  (Umair).** Admin → Full tests now shows **Delete test** on published records as well as drafts.
+  Deleting removes the upload record, cancels activation, hides its papers/questions and clears
+  their upload link; the retained hidden content keeps past results and a sitting already in progress
+  working (including continuing to Math). Exam-kind uploads are no longer returned by the fixed-test
+  listing, their exam cards no longer show **Take Full Test**, and a direct fixed-test start for one
+  returns 404; they still appear under Exams and work through Start Exam, drills and random mocks.
+  Checked: workspace typecheck; 85 unit tests; 51-route production web build; in-memory e2e passed
+  the updated exam hierarchy and published-delete/continue scenarios. The complete legacy e2e run
+  later reaches its existing direct-local pricing mismatch (expects PKR, current IP policy correctly
+  fails closed to USD without signed proxy-country headers). No live database writes.

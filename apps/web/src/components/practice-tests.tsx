@@ -11,8 +11,7 @@ import { Modal, Notice } from "./ui";
 const heading = "text-[20px] font-bold tracking-tight text-black sm:text-[22px]";
 const total = (test: PracticeTestListing, section: (typeof SECTIONS)[number]) => test.moduleCounts[section].m1 + test.moduleCounts[section].m2_easy;
 
-// Starting a fixed practice test (or an uploaded exam taken whole): the same choices as a full
-// adaptive mock, without the exam pool.
+// Starting a fixed practice test: the same choices as a full adaptive mock, without the exam pool.
 export function StartPracticeTest({ test, onClose }: { test: PracticeTestListing; onClose: () => void }) {
   const router = useRouter();
   const queryClient = useQueryClient();
@@ -100,7 +99,7 @@ export function StartPracticeTest({ test, onClose }: { test: PracticeTestListing
   );
 }
 
-// Active uploaded tests, practice tests and exams alike (exams are shown on their exam card).
+// Active fixed practice tests. Exam uploads are shown only in the normal exam hierarchy.
 export const usePracticeTests = () => useQuery({ queryKey: ["practice", "tests"], queryFn: () => api<{ tests: PracticeTestListing[] }>("/api/practice/tests") });
 
 // Fixed full-length tests published by SAT Sharks. Hidden when there are none. Question counts are

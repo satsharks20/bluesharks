@@ -61,6 +61,7 @@ export async function setTestUploadActive(req: Request, res: Response): Promise<
 
 export async function deleteTestUpload(req: Request, res: Response): Promise<void> {
   await testUploadService.remove(uploadId(req));
+  invalidateCatalog();
   sendOk(res, { deleted: true });
 }
 

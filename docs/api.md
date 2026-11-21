@@ -137,8 +137,8 @@ only their own attempts (another user's attempt answers `404`).
 
 Returns `{ exams, topics, access }`.
 
-- `exams[]`: `examId`, `name`, `examDate`, `testUploadId` (an uploaded exam, also takeable as a full
-  test; otherwise null), `sections` — per section, the `paperId` and `questionCount`. Papers from the
+- `exams[]`: `examId`, `name`, `examDate`, `sections` — per section, the `paperId` and
+  `questionCount`. Papers from the
   same exam are grouped into one entry. `locked`: the exam is kept for paid plans and this account
   is free (see "Access by plan").
 - `topics`: per section, the list of `{ topic, skills[] }` present in published questions.
@@ -146,7 +146,7 @@ Returns `{ exams, topics, access }`.
 
 Cached in memory for 60 seconds (locks are added per request); cleared when an admin changes a
 paper's status or a question, or activates or edits an uploaded test. `GET /api/practice/tests`
-also marks each uploaded test `locked`.
+also marks each fixed practice upload `locked`.
 
 ### Access by plan
 
@@ -272,12 +272,13 @@ Details in `docs/full-test-upload.md`. Read routes need `papers:read`, the rest 
 | `PUT /api/admin/test-uploads/:id/sections/:section` | Body `{ questions: UploadQuestion[] }` in order (renumbered per module). `topic` and `skill` are both required and the skill must belong to the topic. Validated like the PDF; marks the section `reviewed`. Up to 2 MB |
 | `POST /api/admin/test-uploads/:id/publish` | Both sections reviewed; creates two hidden papers and their tagged questions. `409` if already published |
 | `POST /api/admin/test-uploads/:id/active` | Body `{ active }`. Activating needs all six modules non-empty and every question answered |
-| `DELETE /api/admin/test-uploads/:id` | Drafts only (`409` for a published test) |
+| `DELETE /api/admin/test-uploads/:id` | Deletes a draft or published upload. Published papers/questions are hidden and retained so existing attempts and results keep working |
 
-Students: `GET /api/practice/tests` lists active uploaded tests of both kinds (`{ tests:
-PracticeTestListing[] }`, each with `kind`); `POST /api/practice/full-tests` with `testUploadId`
-starts a sitting of one (`paperIds` ignored). The catalog, drills and random mocks never include a
-practice test's questions (tag `full-test`); an exam's are bank questions and its card is in the catalog.
+Students: `GET /api/practice/tests` lists active fixed practice uploads (`{ tests:
+PracticeTestListing[] }`); `POST /api/practice/full-tests` with their `testUploadId` starts a sitting
+(`paperIds` ignored). The catalog, drills and random mocks never include a practice test's questions
+(tag `full-test`). An exam upload's questions are bank questions and its card follows the ordinary
+exam hierarchy; it is not exposed as a fixed full test.
 
 ## Assets
 

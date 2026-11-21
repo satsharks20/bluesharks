@@ -9,7 +9,7 @@
 // practice test's questions are tagged "full-test" so drills, random mocks and the practice catalog
 // never use them (see the tag filters in practice.service). An exam is a real administration: its
 // papers carry exam metadata and their own source, so the catalog shows them as one exam card and
-// its questions join drills and random mocks; students can also take it as a fixed full test.
+// its questions join drills and random mocks through the same hierarchy as imported bank papers.
 import katex from "katex";
 import mongoose from "mongoose";
 import { contentKeyOf, PaperModel, QuestionModel, TestUploadModel, trusted, type TestUploadDoc, type TestUploadSectionDoc } from "@satsharks/db";
@@ -666,12 +666,23 @@ export const testUploadService = {
     return { activated, failed };
   },
 
-  // Only a draft can be deleted. A published test may already have student attempts, which keep
-  // pointing at its questions; it is deactivated instead.
+  // Published questions and papers are retained (hidden) because past and in-progress attempts
+  // point at them. Removing the upload retires it from admin/student listings and frees its number.
   async remove(id: string): Promise<void> {
     const upload = await loadUpload(id);
-    if (upload.status === "published") throw AppError.conflict("A published test cannot be deleted because students' results use it. Deactivate it instead.");
-    await TestUploadModel.deleteOne({ _id: upload._id, status: "draft" });
+    if (upload.status === "published") {
+      const paperIds = SECTIONS.map((section) => upload.paperIds[section]).filter((paperId): paperId is mongoose.Types.ObjectId => paperId !== null);
+      await TestUploadModel.updateOne({ _id: upload._id }, { $set: { active: false, activateAt: null } });
+      await PaperModel.updateMany(
+        { _id: trusted({ $in: paperIds }) },
+        { $set: { status: "hidden", publishAt: null }, $unset: { "metadata.testUploadId": "" } },
+      );
+      await QuestionModel.updateMany(
+        { paperId: trusted({ $in: paperIds }) },
+        { $set: { status: "hidden" }, $unset: { "sourceMetadata.testUploadId": "" } },
+      );
+    }
+    await TestUploadModel.deleteOne({ _id: upload._id });
   },
 
   // ---------- students ----------
@@ -691,9 +702,14 @@ export const testUploadService = {
     }));
   },
 
-  // The locks are added per account by practice.service.
+  // The locks are added per account by practice.service. Exam uploads already appear in the normal
+  // exam catalog, so only dedicated practice tests belong in this fixed-test listing.
   async listActive(): Promise<Omit<PracticeTestListing, "locked" | "lockReason" | "pinned" | "label" | "free">[]> {
-    const uploads = await TestUploadModel.find({ status: "published", active: true })
+    const uploads = await TestUploadModel.find({
+      status: "published",
+      active: true,
+      $or: [{ kind: "practice" }, { kind: trusted({ $exists: false }) }],
+    })
       .select("kind title year testNumber paperIds status")
       .sort({ year: -1, testNumber: -1 })
       .lean<TestUploadDoc[]>();
@@ -709,11 +725,13 @@ export const testUploadService = {
     );
   },
 
-  // The paper a student's section of this test is built from. Starting needs an active test;
-  // continuing one already begun (after the break) does not, so deactivating never strands anyone.
+  // The paper a student's section of this test is built from. Only practice uploads can start a
+  // fixed test; exam uploads follow the ordinary exam hierarchy.
   async sectionPaper(id: string, section: Section, requireActive: boolean): Promise<{ upload: TestUploadDoc; paperId: mongoose.Types.ObjectId }> {
-    const upload = await TestUploadModel.findById(id).select("title status active paperIds").lean<TestUploadDoc>();
-    if (!upload || upload.status !== "published" || (requireActive && !upload.active)) throw AppError.notFound("That practice test is not available");
+    const upload = await TestUploadModel.findById(id).select("kind title status active paperIds").lean<TestUploadDoc>();
+    if (!upload || upload.status !== "published" || (requireActive && (!upload.active || kindOf(upload) !== "practice"))) {
+      throw AppError.notFound("That practice test is not available");
+    }
     const paperId = upload.paperIds[section];
     if (!paperId) throw AppError.notFound("That practice test is not available");
     return { upload, paperId };

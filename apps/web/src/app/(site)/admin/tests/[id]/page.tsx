@@ -270,6 +270,13 @@ function TestDetail({ id, canWrite }: { id: string; canWrite: boolean }) {
     }
   }
 
+  const remove = () =>
+    run(async () => {
+      await api(`/api/admin/test-uploads/${id}`, { method: "DELETE" });
+      await queryClient.invalidateQueries({ queryKey: ["admin", "test-uploads"] });
+      router.replace("/admin/tests");
+    });
+
   const bothReviewed = SECTIONS.every((section) => sectionOf(upload, section)?.status === "reviewed");
 
   return (
@@ -336,13 +343,7 @@ function TestDetail({ id, canWrite }: { id: string; canWrite: boolean }) {
                   <Button
                     variant="danger"
                     disabled={busy}
-                    onClick={() =>
-                      run(async () => {
-                        await api(`/api/admin/test-uploads/${id}`, { method: "DELETE" });
-                        await queryClient.invalidateQueries({ queryKey: ["admin", "test-uploads"] });
-                        router.replace("/admin/tests");
-                      })
-                    }
+                    onClick={remove}
                   >
                     Yes, delete
                   </Button>
@@ -369,13 +370,34 @@ function TestDetail({ id, canWrite }: { id: string; canWrite: boolean }) {
             </p>
           </div>
           {canWrite && (
-            <Button
-              variant={upload.active ? "outline" : "primary"}
-              disabled={busy}
-              onClick={() => run(async () => changed((await api<{ upload: TestUploadSummary }>(`/api/admin/test-uploads/${id}/active`, { method: "POST", body: { active: !upload.active } })).upload))}
-            >
-              {busy ? "Saving…" : upload.active ? "Deactivate" : "Activate"}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                variant={upload.active ? "outline" : "primary"}
+                disabled={busy}
+                onClick={() => run(async () => changed((await api<{ upload: TestUploadSummary }>(`/api/admin/test-uploads/${id}/active`, { method: "POST", body: { active: !upload.active } })).upload))}
+              >
+                {busy ? "Saving…" : upload.active ? "Deactivate" : "Activate"}
+              </Button>
+              {confirm === "delete" ? (
+                <>
+                  <Button variant="danger" disabled={busy} onClick={remove}>
+                    {busy ? "Deleting…" : "Yes, delete test"}
+                  </Button>
+                  <Button variant="outline" disabled={busy} onClick={() => setConfirm(null)}>
+                    Cancel
+                  </Button>
+                </>
+              ) : (
+                <Button variant="danger" disabled={busy} onClick={() => setConfirm("delete")}>
+                  Delete test
+                </Button>
+              )}
+            </div>
+          )}
+          {confirm === "delete" && (
+            <p className="basis-full text-sm font-semibold text-red-700">
+              This removes the test from Admin and from new student starts. Existing student attempts and results are preserved.
+            </p>
           )}
           {canWrite && !upload.active && (
             <ScheduleActivation

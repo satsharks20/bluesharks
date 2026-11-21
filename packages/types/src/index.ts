@@ -406,8 +406,6 @@ export interface CatalogExam {
   examId: string;
   name: string;
   examDate: string | null;
-  // An uploaded exam, which can also be taken as a fixed full test.
-  testUploadId: string | null;
   sections: Partial<Record<Section, { paperId: string; questionCount: number }>>;
   // Kept for paid accounts (or for invite codes) and this account cannot open it (see Admin → Access).
   locked: boolean;
@@ -578,7 +576,7 @@ export const UPLOAD_SOURCES = [TEST_UPLOAD_SOURCE, EXAM_UPLOAD_SOURCE];
 
 // Where an uploaded test goes. "practice": Full-Length Practice Tests on Home; its questions are
 // used only in that test. "exam": a real administration (e.g. the December SAT), shown under Exams
-// like the bank's exams (drills, random mocks) and also takeable as a fixed full test.
+// like the bank's exams and used through the normal drill/mock hierarchy.
 export const TEST_UPLOAD_KINDS = ["practice", "exam"] as const;
 export type TestUploadKind = (typeof TEST_UPLOAD_KINDS)[number];
 

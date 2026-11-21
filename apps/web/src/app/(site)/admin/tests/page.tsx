@@ -25,8 +25,8 @@ function FormatHelp() {
           </p>
           <p className="mt-2">
             When uploading, choose where the test goes: <b>Practice tests</b> (Full-Length Practice Tests on the student home; its questions stay in that test) or{" "}
-            <b>Exams</b> for a real SAT administration (listed with the past exams by its date; students can drill it or take it as a full test, and its
-            questions join random mocks).
+            <b>Exams</b> for a real SAT administration (listed with the past exams by its date; students start it like the other exams, and its questions
+            join drills and random mocks).
           </p>
           <p className="mt-2">
             Every question must include a bank <b>CATEGORY</b> (domain) and an exact <b>SKILL</b>, for example <i>Algebra</i> with <i>Linear equations in one variable</i>.

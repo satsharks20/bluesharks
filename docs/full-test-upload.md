@@ -18,9 +18,10 @@ change it later, also after publishing.
   from the date; the server gives it the next free number from 1001 in that year (never shown), so
   practice-test numbers stay free. Once active it is an ordinary card under **Exams** (year/season
   filters from the date; Start Exam = drill), its questions join drills, the topic lists and random
-  mocks, and the card also has **Take Full Test** (the fixed adaptive test, as for a practice test).
+  mocks. It follows the same hierarchy as fetched question-bank papers and does not offer a fixed
+  **Take Full Test** action.
   Its papers have `source: "pdf-upload-exam"` and `sourceMetadata { examId: "upload:<id>",
-  examName, examDate }`, which the catalog groups into one card with `testUploadId`.
+  examName, examDate }`, which the catalog groups into one card.
 
 ## Admin flow
 
@@ -35,8 +36,9 @@ change it later, also after publishing.
 4. Open questions from the test page to add a graph/image or fix anything (the question editor:
    image drag-and-drop, symbol bar, visual equation editor, type switch, choices, answers).
 5. **Activate**: refused unless all six modules have questions with answer keys. Deactivating hides
-   it from new sittings; anyone mid-test can finish. A published test cannot be deleted (results
-   point at it); a draft can.
+   it from new sittings; anyone mid-test can finish. **Delete test** removes either a draft or a
+   published test from Admin and from new student starts. Published papers/questions are retained
+   hidden so existing sittings and past results keep working.
 
 ## PDF format
 

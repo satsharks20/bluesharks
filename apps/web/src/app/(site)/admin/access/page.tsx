@@ -312,14 +312,13 @@ function Access({ canWrite }: { canWrite: boolean }) {
           </li>
         </ul>
         <p className="mt-2 text-xs text-slate-600">
-          A free account&apos;s adaptive mock with &ldquo;All exams&rdquo; draws only from the exams open to it. Full-length practice tests and uploaded exams taken whole are set
-          one by one below.
+          A free account&apos;s adaptive mock with &ldquo;All exams&rdquo; draws only from the exams open to it. Full-length practice tests are set one by one below.
         </p>
       </Card>
 
       <ItemList
         title="Exams"
-        description="Drills and the adaptive mock pool. An uploaded exam's “Take Full Test” follows the same setting."
+        description="Start Exam drills and the adaptive mock pool, including uploaded or fetched exams."
         items={exams}
         rules={draft.rules}
         canWrite={canWrite}

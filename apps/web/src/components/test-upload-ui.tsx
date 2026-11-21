@@ -16,7 +16,7 @@ const KIND_TEXT: Record<TestUploadKind, { label: string; help: string }> = {
   },
   exam: {
     label: "Exam",
-    help: "A real SAT administration. Shown under Exams with the past exams: students can drill it, its questions join random mocks, and it can be taken as a full test.",
+    help: "A real SAT administration. Shown under Exams with the past exams: students start it like the other exams, and its questions join drills and random mocks.",
   },
 };
 
